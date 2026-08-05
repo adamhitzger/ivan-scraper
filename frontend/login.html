@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Přihlášení — LeadMgr</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { DEFAULT: '#10b681', dark: '#0e9d6e', tint: '#ddf6ee' },
+                        ink: '#19221e',
+                        muted: '#5b7066',
+                        faint: '#95a7a0',
+                        line: '#e0eae5',
+                        line2: '#d1dfd8',
+                        canvas: '#f6f9f7'
+                    },
+                    fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-canvas text-ink font-sans antialiased min-h-screen flex items-center justify-center p-5">
+
+    <main class="w-full max-w-[420px]">
+        <div class="bg-white border border-line rounded-2xl px-6 py-9 sm:px-10 sm:py-10 flex flex-col items-center gap-6">
+
+            <div class="flex items-center gap-2.5">
+                <span class="w-8 h-8 rounded-[9px] bg-brand text-white font-bold text-[15px] flex items-center justify-center">✓</span>
+                <span class="text-[17px] font-semibold tracking-tight">LeadMgr</span>
+            </div>
+
+            <h1 class="w-full text-center text-2xl font-bold">Přihlásit se</h1>
+            <p class="w-full text-center text-sm text-muted">Zadejte přístupový kód pro vstup do aplikace.</p>
+
+            {% if error %}
+                <div class="w-full rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-center text-[13px] text-red-700">
+                    Nesprávný přístupový kód.
+                </div>
+            {% endif %}
+
+            <form method="POST" action="/login" class="w-full flex flex-col gap-6">
+                <div class="flex flex-col gap-2">
+                    <label for="kod" class="text-[13px] font-medium">Přístupový kód</label>
+                    <input
+                        id="kod"
+                        name="kod"
+                        type="password"
+                        autofocus
+                        autocomplete="one-time-code"
+                        placeholder="• • • • • • • •"
+                        class="h-[52px] w-full rounded-lg border-2 border-brand bg-white px-4 text-[18px] font-bold tracking-[2px] text-ink placeholder:text-[#9eaba6] placeholder:font-bold focus:outline-none focus:ring-4 focus:ring-brand/15"
+                    />
+                </div>
+
+                <button type="submit"
+                    class="flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand text-sm font-semibold text-white transition hover:bg-brand-dark focus:outline-none focus:ring-4 focus:ring-brand/25">
+                    Přihlásit se <span aria-hidden="true">→</span>
+                </button>
+            </form>
+
+            <p class="text-xs text-muted text-center">Přístupový kód vám poskytl správce systému.</p>
+        </div>
+    </main>
+
+</body>
+</html>

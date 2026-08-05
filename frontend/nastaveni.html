@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nastavení — LeadMgr</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { DEFAULT: '#10b681', dark: '#0e9d6e', tint: '#ddf6ee' },
+                        ink: '#19221e',
+                        muted: '#5b7066',
+                        faint: '#95a7a0',
+                        line: '#e0eae5',
+                        line2: '#d1dfd8',
+                        canvas: '#f6f9f7',
+                        side: '#121f19',
+                        'side-deep': '#0c1611',
+                        'side-line': '#283830',
+                        'side-muted': '#6b907e',
+                        'side-label': '#5b7c6c'
+                    },
+                    fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+
+<body class="bg-canvas font-sans text-ink antialiased"
+      x-data="{ menu: false }"
+      @keydown.escape.window="menu = false">
+
+    <!-- ───────────── Sidebar ───────────── -->
+    <div class="fixed inset-0 z-30 bg-[#0a110e]/50 lg:hidden"
+         x-show="menu" x-cloak x-transition.opacity @click="menu = false"></div>
+
+    <aside class="fixed inset-y-0 left-0 z-40 flex w-[228px] -translate-x-full flex-col bg-side transition-transform duration-200 lg:translate-x-0"
+           :class="menu && 'translate-x-0'">
+
+        <div class="flex h-[68px] shrink-0 items-center gap-2.5 bg-side-deep px-5">
+            <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-base font-bold text-white">✓</span>
+            <span class="text-[15px] font-semibold text-white">LeadMgr</span>
+            <button type="button" class="ml-auto text-side-muted lg:hidden" @click="menu = false" aria-label="Zavřít menu">✕</button>
+        </div>
+
+        <nav class="flex flex-1 flex-col gap-1 px-3 pt-5">
+            <p class="px-2 pb-2 text-[9px] font-semibold uppercase tracking-wider text-side-label">Hlavní menu</p>
+
+            <a href="/" class="flex items-center gap-3 rounded-[10px] px-3.5 py-2.5 text-[13px] text-side-muted transition hover:text-white">
+                <span>◉</span> Provozovny
+            </a>
+
+            <a href="/nastaveni" aria-current="page" class="flex items-center gap-3 rounded-[10px] bg-brand px-3.5 py-2.5 text-[13px] font-semibold text-white">
+                <span class="font-normal">⚙</span> Nastavení
+            </a>
+        </nav>
+    </aside>
+
+    <!-- ───────────── Shell ───────────── -->
+    <div class="lg:pl-[228px]">
+
+        <!-- TopBar — mobil -->
+        <header class="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-white px-4 lg:hidden">
+            <button type="button" @click="menu = true" class="text-lg" aria-label="Otevřít menu">☰</button>
+            <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-sm font-bold text-white">✓</span>
+            <span class="text-[15px] font-semibold">LeadMgr</span>
+            <span class="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">A</span>
+        </header>
+
+        <!-- TopBar — desktop -->
+        <header class="sticky top-0 z-20 hidden h-16 items-center border-b border-line bg-white px-7 lg:flex">
+            <h1 class="text-lg font-semibold">Nastavení</h1>
+
+           
+        </header>
+
+        <main class="px-4 py-5 lg:px-7 lg:py-5">
+
+            <!-- Hlavička stránky — mobil -->
+            <h1 class="mb-4 text-2xl font-bold lg:hidden">Nastavení</h1>
+
+
+            <form method="POST" action="/nastaveni" class="flex flex-col gap-5">
+
+                <!-- ───────────── Hledané výrazy ───────────── -->
+                <!-- `zaklad` = výrazy ze serveru, `extra` = pole přidaná v prohlížeči; dohromady max `max` -->
+                <section class="overflow-hidden rounded-xl border border-line bg-white"
+                         x-data="{ zaklad: {{ vyrazy | length }}, extra: [], max: {{ max_vyrazu | default(value=5) }} }">
+
+                    <div class="border-b border-line px-5 py-4">
+                        <h2 class="text-sm font-semibold">Hledané výrazy</h2>
+                        <p class="mt-1 text-xs text-faint">Výrazy které Apify scraper vyhledává na Google Maps</p>
+                    </div>
+
+                    <div class="px-5 py-4">
+                        <div class="grid grid-cols-2 gap-4 lg:max-w-[1100px] lg:grid-cols-5 lg:gap-5">
+                            {% for vyraz in vyrazy %}
+                                <div class="flex flex-col gap-2">
+                                    <label for="vyraz-{{ loop.index }}" class="text-[11px] font-medium text-muted">Výraz {{ loop.index }}</label>
+                                    <input type="text" name="vyraz" id="vyraz-{{ loop.index }}" value="{{ vyraz }}" maxlength="120"
+                                           class="h-9 w-full rounded-lg border border-line2 bg-canvas px-3 text-xs text-ink placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-brand/25" />
+                                </div>
+                            {% endfor %}
+
+                            <template x-for="(v, i) in extra" :key="i">
+                                <div class="flex flex-col gap-2">
+                                    <label class="text-[11px] font-medium text-muted" :for="'vyraz-' + (zaklad + i + 1)" x-text="'Výraz ' + (zaklad + i + 1)"></label>
+                                    <input type="text" name="vyraz" :id="'vyraz-' + (zaklad + i + 1)" x-model="extra[i]" maxlength="120"
+                                           class="h-9 w-full rounded-lg border border-line2 bg-canvas px-3 text-xs text-ink placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-brand/25" />
+                                </div>
+                            </template>
+                        </div>
+
+                        <button type="button" @click="extra.push('')" :disabled="zaklad + extra.length >= max"
+                                class="mt-4 flex h-8 w-full items-center justify-center rounded-lg bg-brand-tint px-4 text-xs font-medium text-brand-dark transition hover:bg-brand/20 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-brand-tint lg:w-[130px]">
+                            + Přidat výraz
+                        </button>
+                        <p class="mt-2 text-[11px] text-faint" x-show="zaklad + extra.length >= max" x-cloak>
+                            Víc než <span x-text="max"></span> výrazů uložit nejde.
+                        </p>
+                    </div>
+                </section>
+
+                <!-- ───────────── Lokace scrapování ───────────── -->
+                <section class="overflow-hidden rounded-xl border border-line bg-white">
+
+                    <div class="border-b border-line px-5 py-4">
+                        <h2 class="text-sm font-semibold">Lokace scrapování</h2>
+                        <p class="mt-1 text-xs text-faint">Město nebo region který Apify použije jako locationQuery</p>
+                    </div>
+
+                    <div class="px-5 py-4">
+                        <label for="lokace" class="text-[11px] font-medium text-muted">Město / region</label>
+                        <div class="mt-2 flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
+                            <input type="text" id="lokace" name="lokace" value="{{ lokace }}" maxlength="120"
+                                   placeholder="📍  např. Kraków, Praha, Berlin..."
+                                   class="h-9 w-full rounded-lg border border-line2 bg-canvas px-3 text-xs text-ink placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-brand/25 lg:w-[360px]" />
+                            <button type="submit"
+                                    class="h-9 w-full rounded-lg bg-brand px-4 text-xs font-semibold text-white transition hover:bg-brand-dark lg:w-20">
+                                Uložit
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </form>
+        </main>
+    </div>
+
+    <!-- ───────────── Toast ─────────────
+         Vysune se shora, po chvíli sám zmizí; kliknutím jde zavřít dřív.
+         set_global (ne set) — hodnoty ze vnořeného if musí být vidět i za ním. -->
+    {% if ulozeno or chyba %}
+        {% if ulozeno %}
+            {% set_global toast_styl = "border-brand/30 bg-brand-tint text-brand-dark" %}
+            {% set_global toast_text = "Nastavení bylo uloženo." %}
+            {% set_global toast_trvani = 3500 %}
+        {% elif chyba == "lokace" %}
+            {% set_global toast_styl = "border-red-200 bg-red-50 text-red-700" %}
+            {% set_global toast_text = "Takovou lokaci se na OpenStreetMap nepodařilo najít. Zkontrolujte překlep — nic nebylo uloženo." %}
+            {% set_global toast_trvani = 7000 %}
+        {% elif chyba == "overeni" %}
+            {% set_global toast_styl = "border-amber-200 bg-amber-50 text-amber-800" %}
+            {% set_global toast_text = "Lokaci teď nejde ověřit (OpenStreetMap neodpovídá), nic nebylo uloženo. Zkuste to prosím znovu." %}
+            {% set_global toast_trvani = 7000 %}
+        {% else %}
+            {% set_global toast_styl = "border-red-200 bg-red-50 text-red-700" %}
+            {% set_global toast_text = "Nastavení se nepodařilo uložit." %}
+            {% set_global toast_trvani = 7000 %}
+        {% endif %}
+
+        <div x-data="{ show: false, init() { this.$nextTick(() => this.show = true); setTimeout(() => this.show = false, {{ toast_trvani }}) } }"
+             x-show="show"
+             x-cloak
+             @click="show = false"
+             role="status"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="-translate-y-6 opacity-0"
+             x-transition:enter-end="translate-y-0 opacity-100"
+             x-transition:leave="transition ease-in duration-200"
+             x-transition:leave-start="translate-y-0 opacity-100"
+             x-transition:leave-end="-translate-y-6 opacity-0"
+             class="fixed left-1/2 top-4 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 cursor-pointer rounded-lg border px-4 py-3 text-[13px] shadow-lg {{ toast_styl }}">
+            {{ toast_text }}
+        </div>
+    {% endif %}
+
+</body>
+</html>

@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', Arial, sans-serif; 
+            color: #1a1a2e; 
+            background: #f8fafc;
+            padding: 40px;
+        }
+        .header {
+            margin-bottom: 32px;
+        }
+        .header h1 {
+            font-size: 24px;
+            font-weight: 700;
+            color: #1d4ed8;
+            margin-bottom: 4px;
+        }
+        .header p {
+            font-size: 14px;
+            color: #6b7280;
+        }
+        .badge {
+            display: inline-block;
+            background: #dbeafe;
+            color: #1d4ed8;
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-top: 8px;
+        }
+        table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        thead {
+            background: #1e3a5f;
+        }
+        th { 
+            padding: 12px 16px; 
+            text-align: left; 
+            font-size: 12px;
+            font-weight: 600;
+            color: #93c5fd;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        td { 
+            padding: 12px 16px; 
+            border-bottom: 1px solid #f1f5f9; 
+            font-size: 13px; 
+            vertical-align: top;
+            color: #374151;
+        }
+        tr:last-child td {
+            border-bottom: none;
+        }
+        tr:hover td {
+            background: #f8fafc;
+        }
+        .nazev {
+            font-weight: 600;
+            color: #111827;
+        }
+        .mesto {
+            color: #6b7280;
+        }
+        .telefon {
+            color: #374151;
+            white-space: nowrap;
+        }
+        a { 
+            color: #1d4ed8; 
+            text-decoration: none;
+            font-size: 12px;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+        .email-list {
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        .prazdne {
+            color: #d1d5db;
+        }
+        .footer { 
+            margin-top: 32px; 
+            font-size: 11px; 
+            color: #9ca3af;
+            text-align: center;
+            padding-top: 16px;
+            border-top: 1px solid #e5e7eb;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h1>Nové kontakty</h1>
+        <p>Automaticky vygenerovaný přehled nově přidaných provozoven</p>
+        <span class="badge">{{ kontakty | length }} kontaktů</span>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Název</th>
+                <th>Město</th>
+                <th>Telefon</th>
+                <th>Web</th>
+                <th>Emaily</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for p in kontakty %}
+            <tr>
+                <td class="nazev">{{ p.title }}</td>
+                <td class="mesto">{{ p.city | default(value="-") }}</td>
+                <td class="telefon"><a href="tel:{{ p.phone }}">{{ p.phone | default(value="-") }}</a></td>
+                <td>
+                    {% if p.website %}
+                        <a href="{{ p.website }}">{{ p.website }}</a>
+                    {% else %}
+                        <span class="prazdne">-</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if p.emails and p.emails | length > 0 %}
+                        <div class="email-list">
+                        {% for email in p.emails %}
+                            <a href="mailto:{{ email }}">{{ email }}</a>
+                        {% endfor %}
+                        </div>
+                    {% else %}
+                        <span class="prazdne">-</span>
+                    {% endif %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="footer">
+        Vygenerováno automaticky · Ivan Scraper
+    </div>
+
+</body>
+</html>

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Provozovny — LeadMgr</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { DEFAULT: '#10b681', dark: '#0e9d6e', tint: '#ddf6ee' },
+                        ink: '#19221e',
+                        muted: '#5b7066',
+                        faint: '#95a7a0',
+                        line: '#e0eae5',
+                        line2: '#d1dfd8',
+                        canvas: '#f6f9f7',
+                        side: '#121f19',
+                        'side-deep': '#0c1611',
+                        'side-line': '#283830',
+                        'side-muted': '#6b907e',
+                        'side-label': '#5b7c6c'
+                    },
+                    fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+
+<body class="bg-canvas font-sans text-ink antialiased"
+      x-data="{ menu: false }"
+      @keydown.escape.window="menu = false">
+
+    <!-- ───────────── Sidebar ───────────── -->
+    <div class="fixed inset-0 z-30 bg-[#0a110e]/50 lg:hidden"
+         x-show="menu" x-cloak x-transition.opacity @click="menu = false"></div>
+
+    <aside class="fixed inset-y-0 left-0 z-40 flex w-[228px] -translate-x-full flex-col bg-side transition-transform duration-200 lg:translate-x-0"
+           :class="menu && 'translate-x-0'">
+
+        <div class="flex h-[68px] shrink-0 items-center gap-2.5 bg-side-deep px-5">
+            <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-base font-bold text-white">✓</span>
+            <span class="text-[15px] font-semibold text-white">LeadMgr</span>
+            <button type="button" class="ml-auto text-side-muted lg:hidden" @click="menu = false" aria-label="Zavřít menu">✕</button>
+        </div>
+
+        <nav class="flex flex-1 flex-col gap-1 px-3 pt-5">
+            <p class="px-2 pb-2 text-[9px] font-semibold uppercase tracking-wider text-side-label">Hlavní menu</p>
+
+            <a href="/" aria-current="page" class="flex items-center gap-3 rounded-[10px] bg-brand px-3.5 py-2.5 text-[13px] font-semibold text-white">
+                <span class="font-normal">◉</span> Provozovny
+            </a>
+
+            <a href="/nastaveni" class="flex items-center gap-3 rounded-[10px] px-3.5 py-2.5 text-[13px] text-side-muted transition hover:text-white">
+                <span>⚙</span> Nastavení
+            </a>
+        </nav>
+    </aside>
+
+    <!-- ───────────── Shell ───────────── -->
+    <div class="lg:pl-[228px]">
+
+        <!-- TopBar — mobil -->
+        <header class="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-white px-4 lg:hidden">
+            <button type="button" @click="menu = true" class="text-lg" aria-label="Otevřít menu">☰</button>
+            <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-sm font-bold text-white">✓</span>
+            <span class="text-[15px] font-semibold">LeadMgr</span>
+            <span class="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">A</span>
+        </header>
+
+        <!-- TopBar — desktop -->
+        <header class="sticky top-0 z-20 hidden h-16 items-center border-b border-line bg-white px-7 lg:flex">
+            <h1 class="text-lg font-semibold">Provozovny</h1>
+            <p class="ml-6 text-xs text-faint"><span data-num="{{ total }}">{{ total | default(value="—") }}</span> záznamů</p>
+
+        </header>
+
+        <main class="px-4 py-5 lg:px-7 lg:py-4">
+
+            <!-- Hlavička stránky — mobil -->
+            <div class="mb-4 flex items-start justify-between gap-3 lg:hidden">
+                <div>
+                    <h1 class="text-2xl font-bold">Provozovny</h1>
+                    <p class="text-xs text-faint"><span data-num="{{ total }}">{{ total | default(value="—") }}</span> záznamů</p>
+                </div>
+                
+            </div>
+
+            <!-- ───────────── Statistiky ───────────── -->
+            <div class="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+
+                <div class="relative overflow-hidden rounded-xl border border-line bg-white p-4">
+                    <span class="absolute inset-y-0 left-0 w-1 bg-brand"></span>
+                    <span class="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-brand-tint text-sm">◉</span>
+                    <p class="text-xl font-bold leading-tight" data-num="{{ total }}">{{ total | default(value="—") }}</p>
+                    <p class="mt-1 text-[11px] text-muted">Celkem provozoven</p>
+                </div>
+
+                <div class="relative overflow-hidden rounded-xl border border-line bg-white p-4">
+                    <span class="absolute inset-y-0 left-0 w-1 bg-[#3b82f6]"></span>
+                    <span class="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-[#e0ebfe] text-sm">↑</span>
+                    <p class="text-xl font-bold leading-tight">{{ nove_dnes | default(value="—") }}</p>
+                    <p class="mt-1 text-[11px] text-muted">Nové dnes</p>
+                </div>
+
+                <div class="relative overflow-hidden rounded-xl border border-line bg-white p-4">
+                    <span class="absolute inset-y-0 left-0 w-1 bg-[#8c5cf6]"></span>
+                    <span class="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-[#eee6fe] text-sm">@</span>
+                    <p class="text-xl font-bold leading-tight">{{ s_emailem | default(value="—") }}</p>
+                    <p class="mt-1 text-[11px] text-muted">S emailem</p>
+                </div>
+
+                <div class="relative overflow-hidden rounded-xl border border-line bg-white p-4">
+                    <span class="absolute inset-y-0 left-0 w-1 bg-[#db9316]"></span>
+                    <span class="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-[#fef2d9] text-sm">★</span>
+                    <p class="text-xl font-bold leading-tight">{{ prum_hodnoceni | default(value="—") }} ★</p>
+                    <p class="mt-1 text-[11px] text-muted">Prům. hodnocení</p>
+                </div>
+            </div>
+
+            <!-- ───────────── Filtr měst ───────────── -->
+            <div class="mb-4 rounded-xl border border-line bg-white p-3 lg:p-2.5">
+                <div class="no-scrollbar flex gap-2 overflow-x-auto">
+                    <a href="/?page=1"
+                       class="shrink-0 rounded-full px-3.5 py-1.5 text-[13px] transition {% if search == '' %}bg-brand font-semibold text-white{% else %}border border-line2 bg-canvas text-muted hover:border-brand hover:text-ink{% endif %}">
+                        Vše
+                    </a>
+                    {% for mesto in mesta %}
+                        <a href="/?search={{ mesto }}&page=1"
+                           class="shrink-0 rounded-full px-3.5 py-1.5 text-[13px] transition {% if search == mesto %}bg-brand font-semibold text-white{% else %}border border-line2 bg-canvas text-muted hover:border-brand hover:text-ink{% endif %}">
+                            {{ mesto }}
+                        </a>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- ───────────── Tabulka (desktop) ───────────── -->
+            <div class="hidden overflow-hidden rounded-xl border border-line bg-white lg:block">
+                <div class="overflow-x-auto">
+                    <table class="w-full min-w-[1100px] text-left">
+                        <thead>
+                            <tr class="border-b border-line bg-canvas text-[10px] font-medium uppercase tracking-wider text-muted">
+                                <th class="py-3 pl-5 pr-4 font-medium">Název provozovny</th>
+                                <th class="py-3 pr-4 font-medium">Město</th>
+                                <th class="py-3 pr-4 font-medium">Telefon</th>
+                                <th class="py-3 pr-4 font-medium">Emaily</th>
+                                <th class="py-3 pr-4 font-medium">Web</th>
+                                <th class="py-3 pr-4 font-medium">Adresa</th>
+                                <th class="py-3 pr-4 font-medium">Hodnocení</th>
+                                <th class="w-10 px-3 py-3"><span class="sr-only">Akce</span></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-line">
+                        {% for p in data %}
+                            <tr class="text-[13px] transition even:bg-canvas hover:bg-brand-tint/40">
+                                <td class="max-w-[240px] py-3 pl-5 pr-4 font-medium">{{ p.nazev }}</td>
+                                <td class="py-3 pr-4">
+                                    {% if p.mesto %}
+                                        <span class="inline-block whitespace-nowrap rounded-md bg-brand-tint px-2 py-1 text-[11px] font-medium text-brand-dark">{{ p.mesto }}</span>
+                                    {% else %}
+                                        <span class="text-faint">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="whitespace-nowrap py-3 pr-4 text-muted">
+                                    {% if p.telefon %}
+                                        <a href="tel:{{ p.telefon }}" class="hover:text-ink">{{ p.telefon }}</a>
+                                    {% else %}<span class="text-faint">—</span>{% endif %}
+                                </td>
+                                <td class="max-w-[260px] py-3 pr-4">
+                                    {% if p.emaily and p.emaily | length > 0 %}
+                                        <div class="flex flex-col gap-0.5">
+                                            {% for email in p.emaily %}
+                                                <a href="mailto:{{ email }}" class="break-all text-brand-dark hover:underline">{{ email }}</a>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}<span class="text-faint">—</span>{% endif %}
+                                </td>
+                                <td class="max-w-[170px] truncate py-3 pr-4">
+                                    {% if p.web %}
+                                        <a href="{{ p.web }}" target="_blank" rel="noopener" class="text-brand-dark hover:underline">{{ p.web | replace(from="https://", to="") | replace(from="http://", to="") | truncate(length=24) }}</a>
+                                    {% else %}<span class="text-faint">—</span>{% endif %}
+                                </td>
+                                <td class="max-w-[200px] truncate py-3 pr-4 text-muted">
+                                    {% if p.adresa %}{{ p.adresa | truncate(length=26) }}{% else %}<span class="text-faint">—</span>{% endif %}
+                                </td>
+                                <td class="py-3 pr-4">
+                                    {% if p.hodnoceni %}
+                                        <span class="inline-block whitespace-nowrap rounded-md bg-brand-tint px-2 py-1 text-[11px] font-medium text-brand-dark">★ {{ p.hodnoceni | round(precision=1) }}</span>
+                                    {% else %}<span class="text-faint">—</span>{% endif %}
+                                </td>
+                                <td class="px-3 py-3">
+                                    <!-- TODO: route POST /delete zatím neexistuje -->
+                                    <form method="POST" action="/delete">
+                                        <input type="hidden" name="id" value="{{ p.id }}" />
+                                        <button type="submit"
+                                                class="flex h-10 w-10 items-center justify-center rounded-md transition text-red-400 hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+                                                aria-label="Smazat provozovnu {{ p.nazev }}">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-6 w-6" aria-hidden="true">
+                                                <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+                                            </svg>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                        {% else %}
+                            <tr>
+                                <td colspan="8" class="px-5 py-16 text-center text-sm text-faint">Žádné provozovny neodpovídají filtru.</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- ───────────── Karty (mobil) ───────────── -->
+            <div class="flex flex-col gap-3 lg:hidden">
+            {% for p in data %}
+                <article class="rounded-xl border border-line bg-white p-3.5">
+                    <div class="flex items-start gap-2.5">
+                        <<h2 class="flex-1 text-sm font-semibold leading-snug">{{ p.nazev }}</h2>
+                        <!-- TODO: route POST /delete zatím neexistuje -->
+                        <form method="POST" action="/delete" class="shrink-0">
+                            <input type="hidden" name="id" value="{{ p.id }}" />
+                            <button type="submit"
+                                    class="flex h-8 w-8 items-center justify-center rounded-md text-red-400 transition hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/30"
+                                    aria-label="Smazat provozovnu {{ p.nazev }}">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true">
+                                    <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+                                </svg>
+                            </button>
+                        </form>
+                    </div>
+
+                    {% if p.mesto or p.hodnoceni %}
+                    <div class="mt-2.5 flex flex-wrap gap-1.5">
+                        {% if p.mesto %}
+                            <span class="rounded-md bg-brand-tint px-2 py-1 text-[11px] font-medium text-brand-dark">{{ p.mesto }}</span>
+                        {% endif %}
+                        {% if p.hodnoceni %}
+                            <span class="rounded-md bg-brand-tint px-2 py-1 text-[11px] font-medium text-brand-dark">★ {{ p.hodnoceni | round(precision=1) }}</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+
+                    {% if p.telefon or p.web or p.adresa or (p.emaily and p.emaily | length > 0) %}
+                    <div class="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
+                        {% if p.telefon %}
+                            <span class="inline-flex items-center gap-1.5"><span class="text-faint">📞</span><a href="tel:{{ p.telefon }}">{{ p.telefon }}</a></span>
+                        {% endif %}
+                        {% if p.emaily and p.emaily | length > 0 %}
+                            <span class="inline-flex items-center gap-1.5"><span class="text-faint">✉</span><a href="mailto:{{ p.emaily[0] }}" class="text-brand-dark">{{ p.emaily[0] }}</a>{% if p.emaily | length > 1 %}<span>+{{ p.emaily | length - 1 }}</span>{% endif %}</span>
+                        {% endif %}
+                        {% if p.web %}
+                            <span class="inline-flex items-center gap-1.5"><span class="text-faint">🌐</span><a href="{{ p.web }}" target="_blank" rel="noopener" class="text-brand-dark">{{ p.web | replace(from="https://", to="") | replace(from="http://", to="") | truncate(length=24) }}</a></span>
+                        {% endif %}
+                        {% if p.adresa %}
+                            <span class="inline-flex items-center gap-1.5"><span class="text-faint">📍</span>{{ p.adresa | truncate(length=30) }}</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </article>
+            {% else %}
+                <p class="rounded-xl border border-line bg-white px-4 py-14 text-center text-sm text-faint">Žádné provozovny neodpovídají filtru.</p>
+            {% endfor %}
+            </div>
+
+            <!-- ───────────── Patička / stránkování ───────────── -->
+            {% set limit = 10 %}
+            {% set shown = data | length %}
+
+            <div class="mt-5 flex flex-col items-center gap-4 lg:flex-row lg:justify-between">
+                <p class="text-xs text-faint">
+                    {% if shown > 0 %}
+                        Zobrazeno {{ (page - 1) * limit + 1 }}–{{ (page - 1) * limit + shown }} z <span data-num="{{ total }}">{{ total | default(value="—") }}</span> provozoven
+                    {% else %}
+                        Žádné záznamy
+                    {% endif %}
+                </p>
+
+                <!-- Stránkování — desktop -->
+                <nav class="hidden items-center gap-1.5 lg:flex" aria-label="Stránkování">
+                    {% if page > 1 %}
+                        <a href="/?page={{ page - 1 }}&search={{ search }}"
+                           class="rounded-lg border border-line2 bg-white px-3 py-1.5 text-[11px] text-muted transition hover:border-brand hover:text-ink">← Předchozí</a>
+                    {% else %}
+                        <span class="cursor-default rounded-lg border border-line bg-canvas px-3 py-1.5 text-[11px] text-faint">← Předchozí</span>
+                    {% endif %}
+
+                    {% set_global last_shown = 0 %}
+                    {% for n in range(start=1, end=pages + 1) %}
+                        {% if n <= 2 or n > pages - 1 or (n >= page - 1 and n <= page + 1) %}
+                            {% if n > last_shown + 1 %}
+                                <span class="px-1 text-[11px] text-faint">…</span>
+                            {% endif %}
+                            <a href="/?page={{ n }}&search={{ search }}"
+                               class="flex h-8 min-w-[32px] items-center justify-center rounded-lg px-2 text-[13px] transition {% if n == page %}bg-brand font-semibold text-white{% else %}border border-line2 bg-white text-muted hover:border-brand hover:text-ink{% endif %}">{{ n }}</a>
+                            {% set_global last_shown = n %}
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if page < pages %}
+                        <a href="/?page={{ page + 1 }}&search={{ search }}"
+                           class="rounded-lg border border-line2 bg-white px-3 py-1.5 text-[11px] text-muted transition hover:border-brand hover:text-ink">Další →</a>
+                    {% else %}
+                        <span class="cursor-default rounded-lg border border-line bg-canvas px-3 py-1.5 text-[11px] text-faint">Další →</span>
+                    {% endif %}
+                </nav>
+
+                <!-- Stránkování — mobil -->
+                {% if page < pages %}
+                    <a href="/?page={{ page + 1 }}&search={{ search }}"
+                       class="w-full rounded-xl border border-line bg-white py-3 text-center text-sm font-medium lg:hidden">Načíst další</a>
+                {% endif %}
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // České oddělovače tisíců (1 247) — čistě zobrazovací
+        document.querySelectorAll('[data-num]').forEach(function (el) {
+            var n = Number(el.dataset.num);
+            if (el.dataset.num !== '' && !isNaN(n)) el.textContent = n.toLocaleString('cs-CZ');
+        });
+    </script>
+
+</body>
+</html>

@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT DISTINCT mesto FROM provozovny WHERE mesto IS NOT NULL ORDER BY mesto",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "mesto",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "831522d00d211f73de2de866e8ad7990b70c659d59bf581edb7801818dc08b4b"
+}

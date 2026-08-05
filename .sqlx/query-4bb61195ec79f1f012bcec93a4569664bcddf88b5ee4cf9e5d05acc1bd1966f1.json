@@ -1,0 +1,25 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE scraper_config\n        SET lokace  = COALESCE(NULLIF($2, ''), lokace),\n            vyraz1  = $3,\n            vyraz2  = $4,\n            vyraz3  = $5,\n            vyraz4  = $6,\n            vyraz5  = $7,\n            vyraz6  = $8,\n            vyraz7  = $9,\n            vyraz8  = $10,\n            vyraz9  = $11,\n            vyraz10 = $12,\n            updated_at = NOW()\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4bb61195ec79f1f012bcec93a4569664bcddf88b5ee4cf9e5d05acc1bd1966f1"
+}

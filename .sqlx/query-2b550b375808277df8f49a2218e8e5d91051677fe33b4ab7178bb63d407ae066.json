@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT lokace,\n               vyraz1, vyraz2, vyraz3, vyraz4, vyraz5,\n               vyraz6, vyraz7, vyraz8, vyraz9, vyraz10\n        FROM scraper_config\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "lokace",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "vyraz1",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "vyraz2",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "vyraz3",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "vyraz4",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "vyraz5",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "vyraz6",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "vyraz7",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "vyraz8",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "vyraz9",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "vyraz10",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "2b550b375808277df8f49a2218e8e5d91051677fe33b4ab7178bb63d407ae066"
+}
