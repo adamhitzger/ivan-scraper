@@ -63,7 +63,7 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
     .cloned()
     .unwrap_or_default();
     
-let search_pattern = format!("%{}%", search);   
+    let search_pattern = format!("%{}%", search);   
 
     let kontakty = sqlx::query_as!(
     Provozovna,
@@ -84,8 +84,8 @@ let search_pattern = format!("%{}%", search);
     .await;
 
     match &kontakty {
-    Ok(data) => println!("Načteno: {} záznamů", data.len()),
-    Err(e) => eprintln!("DB error: {:?}", e),
+        Ok(data) => println!("Načteno: {} záznamů", data.len()),
+        Err(e) => eprintln!("DB error: {:?}", e),
     }
 
     let mesta:Vec<String> = sqlx::query!(
@@ -94,15 +94,14 @@ let search_pattern = format!("%{}%", search);
     .fetch_all(&state.pool)
     .await
     .unwrap_or_default()
-.into_iter()
-.filter_map(|r| r.mesto)
-.collect();
+    .into_iter()
+    .filter_map(|r| r.mesto)
+    .collect();
 
     
 
-    println!("Mesta {:?}", mesta);
+    
     let kontakty = kontakty.unwrap_or_default();
-    println!("Kontakty {:?}, offset {}, limit {}", kontakty, offset, limit);
     let total = sqlx::query_scalar!(
         r#"
     SELECT COUNT(*) FROM provozovny

@@ -9,6 +9,7 @@ CREATE TABLE provozovny (
     mesto TEXT,
     psc TEXT,
     hodnoceni REAL,
+    pocet_recenzi INTEGER,
     url TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
