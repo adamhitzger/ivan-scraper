@@ -542,7 +542,13 @@ pub async fn run_actor(state: &AppState) -> Result<(), Box<dyn Error>> {
         "searchStringsArray": vyrazy,
         "skipClosedPlaces": true,
         "verifyLeadsEnrichmentEmails": false,
-        "website": "withWebsite"
+        "website": "withWebsite",
+        "categoryFilterWords": [
+            "cannabis club",
+            "cannabis store",
+            "vaporizer store"
+        ],
+        "placeMinimumStars": "threeAndHalf",
     });
 
     let request: RequestBuilder = state.http.request(Method::POST, url)
