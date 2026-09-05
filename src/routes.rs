@@ -523,7 +523,7 @@ pub async fn run_actor(state: &AppState) -> Result<(), Box<dyn Error>> {
         "includeWebResults": true,
         "language": "cs",
         "locationQuery": lokace,
-        "maxCrawledPlacesPerSearch": 20,
+        "maxCrawledPlacesPerSearch": 30,
         "maximumLeadsEnrichmentRecords": 0,
         "scrapeContacts": true,
         "scrapeDirectories": false,

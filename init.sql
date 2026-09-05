@@ -37,7 +37,3 @@ CREATE TABLE scraper_config (
     vyraz10 TEXT,
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
-
--- Vlož výchozí řádek
-INSERT INTO scraper_config (lokace, vyraz1, vyraz2, vyraz3, vyraz4, vyraz5)
-VALUES ('Praha', 'cannabis', 'konopi', 'CBD shop', NULL, NULL);
