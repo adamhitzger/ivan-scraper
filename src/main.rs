@@ -3,8 +3,8 @@ mod routes;
 mod types; 
 use crate::{
     config::Config, routes::{
-        apify_webhook, auth_middleware, delete_record, health, html_page, login, login_page,
-        nastaveni_page, nastaveni_save, run_cron_job,
+        apify_webhook, auth_middleware, delete_record, download_file, health, html_page, login,
+        login_page, nastaveni_page, nastaveni_save, run_cron_job, set_kontaktovane, set_smluvene,
     }
 };
 use anyhow::Result;
@@ -72,6 +72,9 @@ async fn main() -> Result<()> {
     let protected = Router::new()
     .route("/", get(html_page))
     .route("/delete", post(delete_record))
+    .route("/download", post(download_file))
+    .route("/kontaktovane", post(set_kontaktovane))
+    .route("/smluvene", post(set_smluvene))
     .route("/nastaveni", get(nastaveni_page))
     .route("/nastaveni", post(nastaveni_save))
     .route_layer(middleware::from_fn_with_state(state.clone(), auth_middleware));

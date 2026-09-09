@@ -12,7 +12,9 @@ CREATE TABLE provozovny (
     pocet_recenzi INTEGER,
     url TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    is_contacted BOOLEAN NOT NULL DEFAULT FALSE,
+    is_closed BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE provozovny_emaily (

@@ -75,6 +75,16 @@
       },
       {
         "ordinal": 14,
+        "name": "is_contacted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 15,
+        "name": "is_closed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 16,
         "name": "emaily",
         "type_info": "TextArray"
       }
@@ -101,6 +111,8 @@
       true,
       true,
       true,
+      false,
+      false,
       null
     ]
   },

@@ -2,7 +2,7 @@
 use axum::{
     Form, extract::{
         Json, Query, State, Request
-    }, http::StatusCode, response::{Html, IntoResponse, Redirect},
+    }, http::{header, StatusCode}, response::{Html, IntoResponse, Redirect},
     middleware::Next
 };
 use tokio_cron_scheduler::Job;
@@ -20,7 +20,7 @@ use reqwest::{
     Method,
 };
 use sqlx::PgPool;
-use crate::{AppState, types::{ApifyWebhook, Place, Provozovna}};
+use crate::{AppState, types::{ApifyWebhook, Place, Provozovna, ProvozovnaExport}};
 use tera::{
     Context, context
 };
@@ -65,6 +65,13 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
     
     let search_pattern = format!("%{}%", search);   
 
+    // Filtr stavu z pilulek pod městy. Cokoli jiného než známé hodnoty = bez filtru,
+    // ať se do SQL nedostane nic neočekávaného.
+    let stav = match params.get("stav").map(String::as_str) {
+        Some(s @ ("kontaktovane" | "smluvene")) => s.to_string(),
+        _ => String::new(),
+    };
+
     let kontakty = sqlx::query_as!(
     Provozovna,
     r#"
@@ -72,13 +79,17 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
     FROM provozovny p
     LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id
     WHERE ($3 = '' OR p.mesto ILIKE $3)
+      AND ($4 = ''
+           OR ($4 = 'kontaktovane' AND p.is_contacted)
+           OR ($4 = 'smluvene' AND p.is_closed))
     GROUP BY p.id
     ORDER BY p.updated_at DESC
     LIMIT $1 OFFSET $2
     "#,
         limit,
         offset,
-        search_pattern
+        search_pattern,
+        stav
     )
     .fetch_all(&state.pool)
     .await;
@@ -106,8 +117,12 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
         r#"
     SELECT COUNT(*) FROM provozovny
     WHERE ($1 = '' OR mesto ILIKE $1)
+      AND ($2 = ''
+           OR ($2 = 'kontaktovane' AND is_contacted)
+           OR ($2 = 'smluvene' AND is_closed))
     "#,
-    search
+    search,
+    stav
     )
     .fetch_one(&state.pool)
     .await.unwrap_or(Some(0))
@@ -144,6 +159,7 @@ let nove_dnes: i64 = nove_dnes_raw.unwrap_or(Some(0)).unwrap_or(0);
         total => &total,
         data => &kontakty,
         search => &search,
+        stav => &stav,
         mesta => &mesta,
         s_emailem => &s_emailem,
         prum_hodnoceni => &prumer,
@@ -167,6 +183,52 @@ const CONFIG_ID: i32 = 1;
 
 /// Načte konfiguraci scraperu (řádek id = 1): lokaci a neprázdné hledané výrazy.
 /// `Ok(None)` = řádek neexistuje.
+
+async fn get_data_from_popup(
+    pool: &PgPool,
+    limit: i64,
+    mesto: Option<String>,
+    razeni: &str,
+) -> Result<Vec<ProvozovnaExport>, sqlx::Error> {
+    
+    let query = format!(
+        r#"
+        SELECT
+            p.id, p.nazev, p.mesto, p.telefon, p.web,
+            COALESCE(
+                array_agg(e.email ORDER BY e.email) FILTER (WHERE e.email IS NOT NULL),
+                '{{}}'
+            ) AS emaily
+        FROM provozovny p
+        LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id
+        WHERE ($1::text IS NULL OR p.mesto ILIKE $1)
+        GROUP BY p.id
+        ORDER BY {}
+        LIMIT $2
+        "#,
+        razeni
+    );
+
+    sqlx::query_as::<_, ProvozovnaExport>(&query)
+        .bind(mesto)
+        .bind(limit.clamp(1, 10_000))
+        .fetch_all(pool)
+        .await
+}
+
+fn do_xml(data: &[ProvozovnaExport]) -> Result<Vec<u8>, quick_xml::SeError> {
+    #[derive(serde::Serialize)]
+    #[serde(rename = "provozovny")]
+    struct Root<'a> {
+        provozovna: &'a [ProvozovnaExport],
+    }
+
+    let mut out = String::from(r#"<?xml version="1.0" encoding="UTF-8"?>"#);
+    out.push('\n');
+    out.push_str(&quick_xml::se::to_string(&Root { provozovna: data })?);
+    Ok(out.into_bytes())
+}
+
 pub async fn nacti_config(pool: &PgPool) -> Result<Option<(String, Vec<String>)>, sqlx::Error> {
     let row = sqlx::query!(
         r#"
@@ -635,6 +697,137 @@ pub async fn delete_record(State(state): State<AppState>, Form(params): Form<Has
         Ok(_) => Redirect::to("/").into_response(),
         Err(e) => {
             eprintln!("Delete error: {:?}", e);
+            Redirect::to("/").into_response()
+        }
+    }
+}
+
+pub async fn download_file(State(state): State<AppState>, Form(pole): Form<Vec<(String, String)>>) -> impl IntoResponse {
+    println!("Start serverové akce POST /download");
+
+    let mut format: Option<String> = None;
+    let mut razeni: Option<&'static str> = None;
+    let mut limit: Option<i64> = None;
+    let mut mesto: Option<String> = None;
+
+    for (klic, hodnota) in pole {
+        let h = hodnota.trim();
+        match klic.as_str() {
+            "format" => format = Some(h.to_string()),
+            "razeni" => razeni = match h {
+                "nazev_asc"  => Some("p.nazev ASC"),
+                "nazev_desc" => Some("p.nazev DESC"),
+                "datum_asc"  => Some("p.created_at ASC"),
+                "datum_desc" => Some("p.created_at DESC"),
+                _ => None,
+            },
+            "limit" => limit = h.parse::<i64>().ok(),
+            "mesto" => mesto = Some(h.to_string()),
+            _ => {}
+        }
+    }
+
+    let format = format.unwrap_or_else(|| "json".to_string());
+    let razeni = razeni.unwrap_or("p.nazev ASC");
+    let limit  = limit.unwrap_or(100).clamp(1, 10_000);
+    let mesto  = mesto.filter(|s| !s.is_empty());
+
+    let data = match get_data_from_popup(&state.pool, limit, mesto, razeni).await {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("DB chyba: {e}");
+            return (StatusCode::INTERNAL_SERVER_ERROR, "chyba databáze").into_response();
+        }
+    };
+
+    match format.as_str(){
+        "json" =>{
+                let telo = match serde_json::to_vec_pretty(&data) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("serializace: {e}");
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "chyba exportu").into_response();
+                }
+            };
+
+            (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, "application/json; charset=utf-8"),
+                    (header::CONTENT_DISPOSITION, "attachment; filename=\"provozovny.json\""),
+                ],
+                telo,
+            ).into_response()
+        }
+        "xml" => {
+            let telo = match do_xml(&data) {
+                Ok(t) => t,
+                Err(e) => {
+                    eprintln!("xml: {e}");
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "chyba exportu").into_response();
+                }
+            };
+
+            (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, "application/xml; charset=utf-8"),
+                    (header::CONTENT_DISPOSITION, "attachment; filename=\"provozovny.xml\""),
+                ],
+                telo,
+            ).into_response()
+        }
+    _ => (StatusCode::BAD_REQUEST, "neznámý formát").into_response(),
+    }
+}
+
+
+/// Tělo formuláře z dropdownu v tabulce provozoven.
+/// `hodnota` je nová hodnota příznaku, ne přepínač — o tom, co se posílá, rozhoduje šablona.
+#[derive(serde::Deserialize)]
+pub struct StavForm {
+    pub id: i32,
+    pub hodnota: bool,
+}
+
+/// POST /kontaktovane — nastaví u jedné provozovny příznak „kontaktované".
+pub async fn set_kontaktovane(
+    State(state): State<AppState>,
+    Form(form): Form<StavForm>,
+) -> impl IntoResponse {
+    // updated_at se schválně nemění — řadí se podle něj výpis a záznam by přeskočil nahoru.
+    match sqlx::query!(
+        "UPDATE provozovny SET is_contacted = $2 WHERE id = $1",
+        form.id,
+        form.hodnota
+    )
+    .execute(&state.pool)
+    .await
+    {
+        Ok(_) => Redirect::to("/").into_response(),
+        Err(e) => {
+            eprintln!("DB chyba (is_contacted, id = {}): {:?}", form.id, e);
+            Redirect::to("/").into_response()
+        }
+    }
+}
+
+/// POST /smluvene — nastaví u jedné provozovny příznak „smluvené".
+pub async fn set_smluvene(
+    State(state): State<AppState>,
+    Form(form): Form<StavForm>,
+) -> impl IntoResponse {
+    match sqlx::query!(
+        "UPDATE provozovny SET is_closed = $2 WHERE id = $1",
+        form.id,
+        form.hodnota
+    )
+    .execute(&state.pool)
+    .await
+    {
+        Ok(_) => Redirect::to("/").into_response(),
+        Err(e) => {
+            eprintln!("DB chyba (is_closed, id = {}): {:?}", form.id, e);
             Redirect::to("/").into_response()
         }
     }

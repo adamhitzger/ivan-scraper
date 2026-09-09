@@ -1,4 +1,5 @@
 use serde::{Serialize,Deserialize};
+use sqlx::{ FromRow};
 #[derive(Debug, Deserialize)]
 pub struct ApifyWebhook {
     #[serde(rename = "eventType")]
@@ -49,4 +50,16 @@ pub struct Provozovna {
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
     pub emaily: Option<Vec<String>>,
+    pub is_contacted: bool,
+    pub is_closed: bool,
+}
+
+#[derive(Debug, FromRow, serde::Serialize)]
+pub struct ProvozovnaExport {
+    pub id: i32,
+    pub nazev: String,
+    pub mesto: Option<String>,
+    pub telefon: Option<String>,
+    pub web: Option<String>,
+    pub emaily: Vec<String>,
 }
