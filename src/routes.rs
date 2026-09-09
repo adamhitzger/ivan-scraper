@@ -1,4 +1,4 @@
-
+use rust_xlsxwriter::{Workbook, Format, XlsxError};
 use axum::{
     Form, extract::{
         Json, Query, State, Request
@@ -75,7 +75,14 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
     let kontakty = sqlx::query_as!(
     Provozovna,
     r#"
-    SELECT p.*, array_remove(array_agg(e.email), NULL) as emaily
+    -- Sloupce se vypisují ručně: query_as! je mapuje na pole struktury podle pořadí,
+    -- takže `p.*` by při jiném fyzickém rozložení tabulky posunulo hodnoty a dekódování
+    -- by spadlo panikou uvnitř bytes místo čitelné chyby.
+    SELECT
+        p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,
+        p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.created_at, p.updated_at,
+        array_remove(array_agg(e.email), NULL) AS emaily,
+        p.is_contacted, p.is_closed
     FROM provozovny p
     LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id
     WHERE ($3 = '' OR p.mesto ILIKE $3)
@@ -214,6 +221,32 @@ async fn get_data_from_popup(
         .bind(limit.clamp(1, 10_000))
         .fetch_all(pool)
         .await
+}
+
+fn do_xlsx(data: &[ProvozovnaExport]) -> Result<Vec<u8>, XlsxError> {
+    let mut wb = Workbook::new();
+    let sheet = wb.add_worksheet().set_name("Provozovny")?;
+
+    let hlavicka = Format::new().set_bold().set_background_color("D9D9D9");
+
+    for (i, nazev) in ["Název", "Město", "Telefon", "Web", "E-maily"].iter().enumerate() {
+        sheet.write_string_with_format(0, i as u16, *nazev, &hlavicka)?;
+    }
+
+    for (r, p) in data.iter().enumerate() {
+        let r = r as u32 + 1;
+        sheet.write_string(r, 0, &p.nazev)?;
+        sheet.write_string(r, 1, p.mesto.as_deref().unwrap_or(""))?;
+        sheet.write_string(r, 2, p.telefon.as_deref().unwrap_or(""))?;
+        sheet.write_string(r, 3, p.web.as_deref().unwrap_or(""))?;
+        sheet.write_string(r, 4, &p.emaily.join("; "))?;
+    }
+
+    sheet.set_freeze_panes(1, 0)?;
+    sheet.autofilter(0, 0, data.len() as u32, 4)?;
+    sheet.autofit();
+
+    wb.save_to_buffer()
 }
 
 fn do_xml(data: &[ProvozovnaExport]) -> Result<Vec<u8>, quick_xml::SeError> {
@@ -745,8 +778,8 @@ pub async fn download_file(State(state): State<AppState>, Form(pole): Form<Vec<(
                 let telo = match serde_json::to_vec_pretty(&data) {
                 Ok(t) => t,
                 Err(e) => {
-                    eprintln!("serializace: {e}");
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "chyba exportu").into_response();
+                    eprintln!("Chyba serializace jsonu: {e}");
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "chyba exportu jsonu").into_response();
                 }
             };
 
@@ -764,7 +797,7 @@ pub async fn download_file(State(state): State<AppState>, Form(pole): Form<Vec<(
                 Ok(t) => t,
                 Err(e) => {
                     eprintln!("xml: {e}");
-                    return (StatusCode::INTERNAL_SERVER_ERROR, "chyba exportu").into_response();
+                    return (StatusCode::INTERNAL_SERVER_ERROR, "chyba exportu xml").into_response();
                 }
             };
 
@@ -773,6 +806,23 @@ pub async fn download_file(State(state): State<AppState>, Form(pole): Form<Vec<(
                 [
                     (header::CONTENT_TYPE, "application/xml; charset=utf-8"),
                     (header::CONTENT_DISPOSITION, "attachment; filename=\"provozovny.xml\""),
+                ],
+                telo,
+            ).into_response()
+        }
+        "excel" => {
+        let telo = match do_xlsx(&data) { 
+            Ok(t)=> t,
+            Err(e) => {
+                eprintln!("xlsx: {e}");
+                return (StatusCode::INTERNAL_SERVER_ERROR, "chyba exportu xlsx").into_response();
+            }
+         };
+            (
+                StatusCode::OK,
+                [
+                    (header::CONTENT_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                    (header::CONTENT_DISPOSITION, "attachment; filename=\"provozovny.xlsx\""),
                 ],
                 telo,
             ).into_response()
