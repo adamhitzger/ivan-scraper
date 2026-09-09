@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n    SELECT p.*, array_remove(array_agg(e.email), NULL) as emaily\n    FROM provozovny p\n    LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id\n    WHERE ($3 = '' OR p.mesto ILIKE $3)\n    GROUP BY p.id\n    ORDER BY p.updated_at DESC\n    LIMIT $1 OFFSET $2\n    ",
+  "query": "\n    SELECT p.*, array_remove(array_agg(e.email), NULL) as emaily\n    FROM provozovny p\n    LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id\n    WHERE ($3 = '' OR p.mesto ILIKE $3)\n      AND ($4 = ''\n           OR ($4 = 'kontaktovane' AND p.is_contacted)\n           OR ($4 = 'smluvene' AND p.is_closed))\n    GROUP BY p.id\n    ORDER BY p.updated_at DESC\n    LIMIT $1 OFFSET $2\n    ",
   "describe": {
     "columns": [
       {
@@ -93,6 +93,7 @@
       "Left": [
         "Int8",
         "Int8",
+        "Text",
         "Text"
       ]
     },
@@ -116,5 +117,5 @@
       null
     ]
   },
-  "hash": "15c351a2ba93efec7d40dd390936397558cb0debd33c96fb7a5de71c412edecb"
+  "hash": "8bcb2d5cca8184a75d330eedd8547facc4e685fd8b7384701e9fc9e2a3ccd42e"
 }
