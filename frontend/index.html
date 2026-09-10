@@ -138,17 +138,27 @@
                 </div>
             </div>
 
-            <!-- ───────────── Filtr měst ───────────── -->
-            <div class="mb-4 rounded-xl border border-line bg-white p-3 lg:p-2.5">
-                <div class="no-scrollbar flex gap-2 overflow-x-auto">
-                    <a href="/?page=1"
-                       class="shrink-0 rounded-full px-3.5 py-1.5 text-[13px] transition {% if search == '' %}bg-brand font-semibold text-white{% else %}border border-line2 bg-canvas text-muted hover:border-brand hover:text-ink{% endif %}">
-                        Vše
-                    </a>
-                    {% for mesto in mesta %}
-                        <a href="/?search={{ mesto }}&page=1"
-                           class="shrink-0 rounded-full px-3.5 py-1.5 text-[13px] transition {% if search == mesto %}bg-brand font-semibold text-white{% else %}border border-line2 bg-canvas text-muted hover:border-brand hover:text-ink{% endif %}">
-                            {{ mesto }}
+            <!-- ───────────── Filtry ─────────────
+                 Odkazy chodí hotové ze serveru (`url` v pilulce) — drží
+                 druhý filtr a resetují stránkování. -->
+            <div class="mb-4 space-y-2.5 rounded-xl border border-line bg-white p-3 lg:p-2.5">
+
+                <div class="no-scrollbar flex items-center gap-2 overflow-x-auto">
+                    <span class="shrink-0 pr-1 text-[10px] font-semibold uppercase tracking-wider text-faint">Město</span>
+                    {% for m in mesta_pilulky %}
+                        <a href="{{ m.url }}"
+                           class="shrink-0 rounded-full px-3.5 py-1.5 text-[13px] transition {% if m.aktivni %}bg-brand font-semibold text-white{% else %}border border-line2 bg-canvas text-muted hover:border-brand hover:text-ink{% endif %}">
+                            {{ m.popisek }}
+                        </a>
+                    {% endfor %}
+                </div>
+
+                <div class="no-scrollbar flex items-center gap-2 overflow-x-auto border-t border-line pt-2.5">
+                    <span class="shrink-0 pr-1 text-[10px] font-semibold uppercase tracking-wider text-faint">Stav</span>
+                    {% for st in stavy_pilulky %}
+                        <a href="{{ st.url }}"
+                           class="shrink-0 rounded-full px-3.5 py-1.5 text-[13px] transition {% if st.aktivni %}bg-brand font-semibold text-white{% else %}border border-line2 bg-canvas text-muted hover:border-brand hover:text-ink{% endif %}">
+                            {{ st.popisek }}
                         </a>
                     {% endfor %}
                 </div>
@@ -173,7 +183,9 @@
                         <tbody class="divide-y divide-line">
                         {% for p in data %}
                             <tr class="text-[13px] transition even:bg-canvas hover:bg-brand-tint/40">
-                                <td class="max-w-[240px] py-3 pl-5 pr-4 font-medium">{{ p.nazev }}</td>
+                                <td class="max-w-[240px] py-3 pl-5 pr-4 font-medium">
+                                    <a href="/provozovna/{{ p.slug }}?page={{ page }}{{ qs }}" class="hover:text-brand-dark hover:underline">{{ p.nazev }}</a>
+                                </td>
                                 <td class="py-3 pr-4">
                                     {% if p.mesto %}
                                         <span class="inline-block whitespace-nowrap rounded-md bg-brand-tint px-2 py-1 text-[11px] font-medium text-brand-dark">{{ p.mesto }}</span>
@@ -212,6 +224,7 @@
                                     <div class="flex items-center gap-0.5">
                                         <form method="POST" action="/delete">
                                             <input type="hidden" name="id" value="{{ p.id }}" />
+                                            <input type="hidden" name="zpet" value="{{ zpet }}" />
                                             <button type="submit"
                                                     class="flex h-10 w-10 items-center justify-center rounded-md transition text-red-400 hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/30"
                                                     aria-label="Smazat provozovnu {{ p.nazev }}">
@@ -240,6 +253,7 @@
 
                                                 <form method="POST" action="/kontaktovane">
                                                     <input type="hidden" name="id" value="{{ p.id }}" />
+                                                    <input type="hidden" name="zpet" value="{{ zpet }}" />
                                                     <input type="hidden" name="hodnota" value="{% if p.is_contacted %}false{% else %}true{% endif %}" />
                                                     <button type="submit" class="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition hover:bg-canvas">
                                                         <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded {% if p.is_contacted %}bg-brand text-[9px] font-bold text-white{% else %}border-[1.5px] border-line2{% endif %}">{% if p.is_contacted %}✓{% endif %}</span>
@@ -249,6 +263,7 @@
 
                                                 <form method="POST" action="/smluvene">
                                                     <input type="hidden" name="id" value="{{ p.id }}" />
+                                                    <input type="hidden" name="zpet" value="{{ zpet }}" />
                                                     <input type="hidden" name="hodnota" value="{% if p.is_closed %}false{% else %}true{% endif %}" />
                                                     <button type="submit" class="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition hover:bg-canvas">
                                                         <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded {% if p.is_closed %}bg-brand text-[9px] font-bold text-white{% else %}border-[1.5px] border-line2{% endif %}">{% if p.is_closed %}✓{% endif %}</span>
@@ -275,9 +290,12 @@
             {% for p in data %}
                 <article class="rounded-xl border border-line bg-white p-3.5">
                     <div class="flex items-start gap-2.5">
-                        <<h2 class="flex-1 text-sm font-semibold leading-snug">{{ p.nazev }}</h2>
+                        <h2 class="flex-1 text-sm font-semibold leading-snug">
+                            <a href="/provozovna/{{ p.slug }}?page={{ page }}{{ qs }}">{{ p.nazev }}</a>
+                        </h2>
                         <form method="POST" action="/delete" class="shrink-0">
                             <input type="hidden" name="id" value="{{ p.id }}" />
+                            <input type="hidden" name="zpet" value="{{ zpet }}" />
                             <button type="submit"
                                     class="flex h-8 w-8 items-center justify-center rounded-md text-red-400 transition hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/30"
                                     aria-label="Smazat provozovnu {{ p.nazev }}">
@@ -305,6 +323,7 @@
 
                                 <form method="POST" action="/kontaktovane">
                                     <input type="hidden" name="id" value="{{ p.id }}" />
+                                    <input type="hidden" name="zpet" value="{{ zpet }}" />
                                     <input type="hidden" name="hodnota" value="{% if p.is_contacted %}false{% else %}true{% endif %}" />
                                     <button type="submit" class="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition hover:bg-canvas">
                                         <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded {% if p.is_contacted %}bg-brand text-[9px] font-bold text-white{% else %}border-[1.5px] border-line2{% endif %}">{% if p.is_contacted %}✓{% endif %}</span>
@@ -314,6 +333,7 @@
 
                                 <form method="POST" action="/smluvene">
                                     <input type="hidden" name="id" value="{{ p.id }}" />
+                                    <input type="hidden" name="zpet" value="{{ zpet }}" />
                                     <input type="hidden" name="hodnota" value="{% if p.is_closed %}false{% else %}true{% endif %}" />
                                     <button type="submit" class="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] transition hover:bg-canvas">
                                         <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded {% if p.is_closed %}bg-brand text-[9px] font-bold text-white{% else %}border-[1.5px] border-line2{% endif %}">{% if p.is_closed %}✓{% endif %}</span>
@@ -373,7 +393,7 @@
                 <!-- Stránkování — desktop -->
                 <nav class="hidden items-center gap-1.5 lg:flex" aria-label="Stránkování">
                     {% if page > 1 %}
-                        <a href="/?page={{ page - 1 }}&search={{ search }}"
+                        <a href="/?page={{ page - 1 }}{{ qs }}"
                            class="rounded-lg border border-line2 bg-white px-3 py-1.5 text-[11px] text-muted transition hover:border-brand hover:text-ink">← Předchozí</a>
                     {% else %}
                         <span class="cursor-default rounded-lg border border-line bg-canvas px-3 py-1.5 text-[11px] text-faint">← Předchozí</span>
@@ -385,14 +405,14 @@
                             {% if n > last_shown + 1 %}
                                 <span class="px-1 text-[11px] text-faint">…</span>
                             {% endif %}
-                            <a href="/?page={{ n }}&search={{ search }}"
+                            <a href="/?page={{ n }}{{ qs }}"
                                class="flex h-8 min-w-[32px] items-center justify-center rounded-lg px-2 text-[13px] transition {% if n == page %}bg-brand font-semibold text-white{% else %}border border-line2 bg-white text-muted hover:border-brand hover:text-ink{% endif %}">{{ n }}</a>
                             {% set_global last_shown = n %}
                         {% endif %}
                     {% endfor %}
 
                     {% if page < pages %}
-                        <a href="/?page={{ page + 1 }}&search={{ search }}"
+                        <a href="/?page={{ page + 1 }}{{ qs }}"
                            class="rounded-lg border border-line2 bg-white px-3 py-1.5 text-[11px] text-muted transition hover:border-brand hover:text-ink">Další →</a>
                     {% else %}
                         <span class="cursor-default rounded-lg border border-line bg-canvas px-3 py-1.5 text-[11px] text-faint">Další →</span>
@@ -401,7 +421,7 @@
 
                 <!-- Stránkování — mobil -->
                 {% if page < pages %}
-                    <a href="/?page={{ page + 1 }}&search={{ search }}"
+                    <a href="/?page={{ page + 1 }}{{ qs }}"
                        class="w-full rounded-xl border border-line bg-white py-3 text-center text-sm font-medium lg:hidden">Načíst další</a>
                 {% endif %}
             </div>
@@ -434,13 +454,10 @@
             <!-- Formát souboru -->
             <section class="border-t border-line px-6 py-4">
                 <p class="text-[11px] font-medium text-muted">Formát souboru</p>
-                <div class="mt-2 grid grid-cols-4 gap-2">
+                <div class="mt-2 grid grid-cols-3 gap-2">
                      <button type="button" @click="format = 'excel'"
                             :class="format === 'excel' ? 'bg-brand font-semibold text-white' : 'border border-line2 bg-canvas text-muted hover:border-brand hover:text-ink'"
                             class="h-9 rounded-lg text-[13px] transition">Excel</button>
-                    <button type="button" @click="format = 'pdf'"
-                            :class="format === 'pdf' ? 'bg-brand font-semibold text-white' : 'border border-line2 bg-canvas text-muted hover:border-brand hover:text-ink'"
-                            class="h-9 rounded-lg text-[13px] transition">PDF</button>
                     <button type="button" @click="format = 'json'"
                             :class="format === 'json' ? 'bg-brand font-semibold text-white' : 'border border-line2 bg-canvas text-muted hover:border-brand hover:text-ink'"
                             class="h-9 rounded-lg text-[13px] transition">JSON</button>
@@ -472,7 +489,7 @@
                 </div>
             </section>
 
-            <!-- Filtr města — přednastavené na aktuálně filtrované město -->
+            <!-- Filtry — přednastavené podle toho, co je zrovna vidět ve výpisu -->
             <section class="border-t border-line px-6 py-4">
                 <label for="mesto" class="text-[11px] font-medium text-muted">Filtrovat podle města</label>
                 <select id="mesto" name="mesto"
@@ -481,6 +498,16 @@
                     {% for m in mesta %}
                         <option value="{{ m }}"{% if m == search %} selected{% endif %}>{{ m }}</option>
                     {% endfor %}
+                </select>
+            </section>
+
+            <section class="border-t border-line px-6 py-4">
+                <label for="stav" class="text-[11px] font-medium text-muted">Filtrovat podle stavu</label>
+                <select id="stav" name="stav"
+                        class="mt-2 h-9 w-full rounded-lg border border-line2 bg-canvas px-3 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-brand/25">
+                    <option value=""{% if stav == "" %} selected{% endif %}>Všechny stavy</option>
+                    <option value="kontaktovane"{% if stav == "kontaktovane" %} selected{% endif %}>Kontaktované</option>
+                    <option value="smluvene"{% if stav == "smluvene" %} selected{% endif %}>Smluvené</option>
                 </select>
             </section>
 

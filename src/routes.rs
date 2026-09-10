@@ -1,8 +1,8 @@
 use rust_xlsxwriter::{Workbook, Format, XlsxError};
 use axum::{
     Form, extract::{
-        Json, Query, State, Request
-    }, http::{header, StatusCode}, response::{Html, IntoResponse, Redirect},
+        Json, Path, Query, State, Request
+    }, http::{header, StatusCode}, response::{Html, IntoResponse, Redirect, Response as AxumResponse},
     middleware::Next
 };
 use tokio_cron_scheduler::Job;
@@ -20,7 +20,7 @@ use reqwest::{
     Method,
 };
 use sqlx::PgPool;
-use crate::{AppState, types::{ApifyWebhook, Place, Provozovna, ProvozovnaExport}};
+use crate::{AppState, types::{ApifyWebhook, Place, Provozovna, ProvozovnaExport, ProvozovnaView, id_ze_slugu}};
 use tera::{
     Context, context
 };
@@ -49,28 +49,124 @@ pub async fn send_kontakty_email(
     Ok(())
 }
 
+/// Percent-encoding hodnoty do query stringu. Vlastní, ať kvůli pár řádkům
+/// nepřibývá závislost — projde jen nevyhrazené znaky z RFC 3986.
+fn enkoduj(hodnota: &str) -> String {
+    let mut out = String::with_capacity(hodnota.len());
+
+    for b in hodnota.as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*b as char)
+            }
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+
+    out
+}
+
+/// Stav výpisu držený v query parametrech (`?page=&search=&stav=`).
+/// Posílá se dál každým odkazem i serverovou akcí, aby stránka ani filtry
+/// nezmizely po přechodu na detail nebo po POSTu.
+#[derive(Debug, Clone)]
+pub struct Filtry {
+    pub page: i64,
+    /// Město; do SQL jde jako ILIKE vzor, prázdné = bez filtru.
+    pub search: String,
+    /// `kontaktovane` | `smluvene` | prázdné.
+    pub stav: String,
+}
+
+impl Filtry {
+    pub fn z_params(params: &HashMap<String, String>) -> Self {
+        let page = params
+            .get("page")
+            .and_then(|p| p.parse::<i64>().ok())
+            .filter(|p| *p >= 1)
+            .unwrap_or(1);
+
+        let search = params.get("search").cloned().unwrap_or_default();
+
+        // Cokoli jiného než známé hodnoty = bez filtru, ať se do SQL
+        // nedostane nic neočekávaného.
+        let stav = match params.get("stav").map(String::as_str) {
+            Some(s @ ("kontaktovane" | "smluvene")) => s.to_string(),
+            _ => String::new(),
+        };
+
+        Self { page, search, stav }
+    }
+
+    /// `&search=…&stav=…`; `page` se do odkazů doplňuje zvlášť, protože se
+    /// u stránkování mění.
+    pub fn suffix(&self) -> String {
+        let mut qs = String::new();
+
+        if !self.search.is_empty() {
+            qs.push_str(&format!("&search={}", enkoduj(&self.search)));
+        }
+
+        if !self.stav.is_empty() {
+            qs.push_str(&format!("&stav={}", enkoduj(&self.stav)));
+        }
+
+        qs
+    }
+
+    /// Odkaz na výpis se stejným filtrem i stránkou.
+    pub fn url(&self) -> String {
+        format!("/?page={}{}", self.page, self.suffix())
+    }
+
+    /// Odkaz na detail provozovny, filtry s sebou (kvůli odkazu „zpět“).
+    pub fn url_detailu(&self, slug: &str) -> String {
+        format!("/provozovna/{}?page={}{}", slug, self.page, self.suffix())
+    }
+
+    /// Jiné město, stav zůstává. Stránkování se resetuje — na páté stránce
+    /// jiného města by uživatel často skončil v prázdnu.
+    fn s_mestem(&self, mesto: &str) -> Self {
+        Self { page: 1, search: mesto.to_string(), stav: self.stav.clone() }
+    }
+
+    /// Jiný stav, město zůstává. Stránkování se resetuje ze stejného důvodu.
+    fn se_stavem(&self, stav: &str) -> Self {
+        Self { page: 1, search: self.search.clone(), stav: stav.to_string() }
+    }
+}
+
+/// Pilulka filtru (města i stavu) předpřipravená pro šablonu. Odkazy se
+/// skládají tady, protože Tera 2 přesunula `urlencode` do tera-contrib.
+#[derive(serde::Serialize)]
+struct Pilulka {
+    popisek: String,
+    url: String,
+    aktivni: bool,
+}
+
+/// Kam se po serverové akci vrátit. Bere se z formuláře, takže se ověřuje:
+/// musí to být relativní cesta na tenhle web, ne cizí adresa ani hlavička
+/// rozbitá novým řádkem.
+fn bezpecny_navrat(zpet: Option<&str>) -> String {
+    let vychozi = "/".to_string();
+
+    let Some(cil) = zpet else { return vychozi };
+
+    let vypada_relativne = cil.starts_with('/')
+        && !cil.starts_with("//")
+        && !cil.starts_with("/\\")
+        && !cil.contains(|c: char| c.is_control());
+
+    if vypada_relativne { cil.to_string() } else { vychozi }
+}
+
 pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<String,String>>) -> impl IntoResponse{
-    let mut context: Context = Context::new();
-    
+    let filtry = Filtry::z_params(&params);
+
     let limit: i64 = 10;
-    let page: i64 = params.get("page")
-        .and_then(|p| p.parse::<i64>().ok())
-        .unwrap_or(1);
-
-    let offset: i64 = (page - 1) * limit;
-
-    let search = params.get("search")
-    .cloned()
-    .unwrap_or_default();
-    
-    let search_pattern = format!("%{}%", search);   
-
-    // Filtr stavu z pilulek pod městy. Cokoli jiného než známé hodnoty = bez filtru,
-    // ať se do SQL nedostane nic neočekávaného.
-    let stav = match params.get("stav").map(String::as_str) {
-        Some(s @ ("kontaktovane" | "smluvene")) => s.to_string(),
-        _ => String::new(),
-    };
+    let offset: i64 = (filtry.page - 1) * limit;
+    let search_pattern = format!("%{}%", filtry.search);
 
     let kontakty = sqlx::query_as!(
     Provozovna,
@@ -82,7 +178,7 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
         p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,
         p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.created_at, p.updated_at,
         array_remove(array_agg(e.email), NULL) AS emaily,
-        p.is_contacted, p.is_closed
+        p.is_contacted, p.is_closed, p.poznamka
     FROM provozovny p
     LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id
     WHERE ($3 = '' OR p.mesto ILIKE $3)
@@ -96,7 +192,7 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
         limit,
         offset,
         search_pattern,
-        stav
+        filtry.stav
     )
     .fetch_all(&state.pool)
     .await;
@@ -105,6 +201,14 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
         Ok(data) => println!("Načteno: {} záznamů", data.len()),
         Err(e) => eprintln!("DB error: {:?}", e),
     }
+
+    // Slug pro odkaz na detail se dopočítává až tady — v SQL by převod
+    // diakritiky znamenal rozšíření `unaccent`.
+    let data: Vec<ProvozovnaView> = kontakty
+        .unwrap_or_default()
+        .into_iter()
+        .map(ProvozovnaView::from)
+        .collect();
 
     let mesta:Vec<String> = sqlx::query!(
         "SELECT DISTINCT mesto FROM provozovny WHERE mesto IS NOT NULL ORDER BY mesto"
@@ -116,10 +220,29 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
     .filter_map(|r| r.mesto)
     .collect();
 
-    
+    let mut mesta_pilulky = vec![Pilulka {
+        popisek: "Vše".to_string(),
+        url: filtry.s_mestem("").url(),
+        aktivni: filtry.search.is_empty(),
+    }];
 
-    
-    let kontakty = kontakty.unwrap_or_default();
+    mesta_pilulky.extend(mesta.iter().map(|mesto| Pilulka {
+        popisek: mesto.clone(),
+        url: filtry.s_mestem(mesto).url(),
+        aktivni: filtry.search == *mesto,
+    }));
+
+    let stavy_pilulky: Vec<Pilulka> = [("", "Všechny stavy"), ("kontaktovane", "Kontaktované"), ("smluvene", "Smluvené")]
+        .iter()
+        .map(|(klic, popisek)| Pilulka {
+            popisek: popisek.to_string(),
+            url: filtry.se_stavem(klic).url(),
+            aktivni: filtry.stav == *klic,
+        })
+        .collect();
+
+    // Stejný filtr jako u výpisu — jinak by čísla ve stránkování neseděla
+    // s tím, co je v tabulce vidět.
     let total = sqlx::query_scalar!(
         r#"
     SELECT COUNT(*) FROM provozovny
@@ -128,8 +251,8 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
            OR ($2 = 'kontaktovane' AND is_contacted)
            OR ($2 = 'smluvene' AND is_closed))
     "#,
-    search,
-    stav
+    search_pattern,
+    filtry.stav
     )
     .fetch_one(&state.pool)
     .await.unwrap_or(Some(0))
@@ -160,19 +283,25 @@ let nove_dnes_raw: Result<Option<i64>, _> = sqlx::query_scalar!(
 
 let nove_dnes: i64 = nove_dnes_raw.unwrap_or(Some(0)).unwrap_or(0);
 
-    context = context!{
-        page => &page,
+    let context: Context = context!{
+        page => &filtry.page,
         pages => &total_pages,
         total => &total,
-        data => &kontakty,
-        search => &search,
-        stav => &stav,
+        data => &data,
+        search => &filtry.search,
+        stav => &filtry.stav,
+        // Připravený `&search=…&stav=…` pro odkazy stránkování.
+        qs => &filtry.suffix(),
+        // Cesta zpět pro serverové akce (skryté pole `zpet` ve formulářích).
+        zpet => &filtry.url(),
         mesta => &mesta,
+        mesta_pilulky => &mesta_pilulky,
+        stavy_pilulky => &stavy_pilulky,
         s_emailem => &s_emailem,
         prum_hodnoceni => &prumer,
         nove_dnes => &nove_dnes
     };
-    
+
     match state.tera.render("index.html", &context) {
         Ok(html) => Html(html),
         Err(err) => {
@@ -195,9 +324,11 @@ async fn get_data_from_popup(
     pool: &PgPool,
     limit: i64,
     mesto: Option<String>,
+    stav: &str,
     razeni: &str,
 ) -> Result<Vec<ProvozovnaExport>, sqlx::Error> {
-    
+    // `razeni` se do SQL vkládá formátováním, proto smí přijít jen z whitelistu
+    // ve `download_file`. Ostatní parametry jdou jako bindy.
     let query = format!(
         r#"
         SELECT
@@ -209,15 +340,19 @@ async fn get_data_from_popup(
         FROM provozovny p
         LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id
         WHERE ($1::text IS NULL OR p.mesto ILIKE $1)
+          AND ($2 = ''
+               OR ($2 = 'kontaktovane' AND p.is_contacted)
+               OR ($2 = 'smluvene' AND p.is_closed))
         GROUP BY p.id
         ORDER BY {}
-        LIMIT $2
+        LIMIT $3
         "#,
         razeni
     );
 
     sqlx::query_as::<_, ProvozovnaExport>(&query)
         .bind(mesto)
+        .bind(stav)
         .bind(limit.clamp(1, 10_000))
         .fetch_all(pool)
         .await
@@ -718,19 +853,23 @@ pub async fn login_page(State(state): State<AppState>, params: Query<HashMap<Str
 }
 
 pub async fn delete_record(State(state): State<AppState>, Form(params): Form<HashMap<String, String>>) -> impl IntoResponse {
+    // Formulář posílá `zpet` = výpis se stránkou i filtry, aby mazání
+    // neodhodilo uživatele na první stránku bez filtru.
+    let zpet = bezpecny_navrat(params.get("zpet").map(String::as_str));
+
     let id: i32 = match params.get("id").and_then(|id| id.parse().ok()) {
         Some(id) => id,
-        None => return Redirect::to("/").into_response(),
+        None => return Redirect::to(&zpet).into_response(),
     };
 
     match sqlx::query!("DELETE FROM provozovny WHERE id = $1", id)
         .execute(&state.pool)
         .await
     {
-        Ok(_) => Redirect::to("/").into_response(),
+        Ok(_) => Redirect::to(&zpet).into_response(),
         Err(e) => {
             eprintln!("Delete error: {:?}", e);
-            Redirect::to("/").into_response()
+            Redirect::to(&zpet).into_response()
         }
     }
 }
@@ -742,6 +881,7 @@ pub async fn download_file(State(state): State<AppState>, Form(pole): Form<Vec<(
     let mut razeni: Option<&'static str> = None;
     let mut limit: Option<i64> = None;
     let mut mesto: Option<String> = None;
+    let mut stav = String::new();
 
     for (klic, hodnota) in pole {
         let h = hodnota.trim();
@@ -756,6 +896,11 @@ pub async fn download_file(State(state): State<AppState>, Form(pole): Form<Vec<(
             },
             "limit" => limit = h.parse::<i64>().ok(),
             "mesto" => mesto = Some(h.to_string()),
+            // Stejný whitelist jako u výpisu — neznámá hodnota = bez filtru.
+            "stav" => stav = match h {
+                "kontaktovane" | "smluvene" => h.to_string(),
+                _ => String::new(),
+            },
             _ => {}
         }
     }
@@ -765,7 +910,7 @@ pub async fn download_file(State(state): State<AppState>, Form(pole): Form<Vec<(
     let limit  = limit.unwrap_or(100).clamp(1, 10_000);
     let mesto  = mesto.filter(|s| !s.is_empty());
 
-    let data = match get_data_from_popup(&state.pool, limit, mesto, razeni).await {
+    let data = match get_data_from_popup(&state.pool, limit, mesto, &stav, razeni).await {
         Ok(d) => d,
         Err(e) => {
             eprintln!("DB chyba: {e}");
@@ -838,6 +983,8 @@ pub async fn download_file(State(state): State<AppState>, Form(pole): Form<Vec<(
 pub struct StavForm {
     pub id: i32,
     pub hodnota: bool,
+    /// Kam se vrátit — výpis se stránkou a filtry, nebo detail provozovny.
+    pub zpet: Option<String>,
 }
 
 /// POST /kontaktovane — nastaví u jedné provozovny příznak „kontaktované".
@@ -846,6 +993,8 @@ pub async fn set_kontaktovane(
     Form(form): Form<StavForm>,
 ) -> impl IntoResponse {
     // updated_at se schválně nemění — řadí se podle něj výpis a záznam by přeskočil nahoru.
+    let zpet = bezpecny_navrat(form.zpet.as_deref());
+
     match sqlx::query!(
         "UPDATE provozovny SET is_contacted = $2 WHERE id = $1",
         form.id,
@@ -854,10 +1003,10 @@ pub async fn set_kontaktovane(
     .execute(&state.pool)
     .await
     {
-        Ok(_) => Redirect::to("/").into_response(),
+        Ok(_) => Redirect::to(&zpet).into_response(),
         Err(e) => {
             eprintln!("DB chyba (is_contacted, id = {}): {:?}", form.id, e);
-            Redirect::to("/").into_response()
+            Redirect::to(&zpet).into_response()
         }
     }
 }
@@ -867,6 +1016,8 @@ pub async fn set_smluvene(
     State(state): State<AppState>,
     Form(form): Form<StavForm>,
 ) -> impl IntoResponse {
+    let zpet = bezpecny_navrat(form.zpet.as_deref());
+
     match sqlx::query!(
         "UPDATE provozovny SET is_closed = $2 WHERE id = $1",
         form.id,
@@ -875,10 +1026,137 @@ pub async fn set_smluvene(
     .execute(&state.pool)
     .await
     {
-        Ok(_) => Redirect::to("/").into_response(),
+        Ok(_) => Redirect::to(&zpet).into_response(),
         Err(e) => {
             eprintln!("DB chyba (is_closed, id = {}): {:?}", form.id, e);
-            Redirect::to("/").into_response()
+            Redirect::to(&zpet).into_response()
+        }
+    }
+}
+
+/// GET /provozovna/:slug — detail jedné provozovny.
+///
+/// Slug má tvar `nazev-id`, ale závazné je jen `id` na konci: podle něj se
+/// řádek dohledává, takže přejmenování nerozbije rozeslané odkazy. Když se
+/// tvar rozejde s kanonickým, přesměruje se, ať jeden záznam nežije na více
+/// adresách. Query parametry (`page`, `search`, `stav`) nesou filtr z výpisu,
+/// aby odkaz „zpět" vrátil uživatele tam, odkud přišel.
+pub async fn provozovna_detail(
+    State(state): State<AppState>,
+    Path(slug): Path<String>,
+    params: Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let filtry = Filtry::z_params(&params);
+
+    let Some(id) = id_ze_slugu(&slug) else {
+        return render_detail(&state, None, &filtry);
+    };
+
+    let provozovna = sqlx::query_as!(
+        Provozovna,
+        r#"
+        SELECT
+            p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,
+            p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.created_at, p.updated_at,
+            array_remove(array_agg(e.email), NULL) AS emaily,
+            p.is_contacted, p.is_closed, p.poznamka
+        FROM provozovny p
+        LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id
+        WHERE p.id = $1
+        GROUP BY p.id
+        "#,
+        id
+    )
+    .fetch_optional(&state.pool)
+    .await;
+
+    let provozovna = match provozovna {
+        Ok(Some(p)) => p,
+        Ok(None) => return render_detail(&state, None, &filtry),
+        Err(e) => {
+            eprintln!("DB chyba (detail provozovny, id = {}): {:?}", id, e);
+            return render_detail(&state, None, &filtry);
+        }
+    };
+
+    let view = ProvozovnaView::from(provozovna);
+
+    if view.slug != slug {
+        return Redirect::permanent(&filtry.url_detailu(&view.slug)).into_response();
+    }
+
+    render_detail(&state, Some(&view), &filtry)
+}
+
+/// Vykreslí detail. `provozovna == None` znamená neexistující záznam —
+/// vrací se 404, ať se chybný odkaz nechová jako platná stránka.
+fn render_detail(state: &AppState, provozovna: Option<&ProvozovnaView>, filtry: &Filtry) -> AxumResponse {
+    let context = context! {
+        p => &provozovna,
+        // Odkaz zpět do výpisu i cíl přesměrování po akcích na této stránce.
+        zpet => &filtry.url(),
+        detail_url => &provozovna.map(|p| filtry.url_detailu(&p.slug)).unwrap_or_default(),
+    };
+
+    let status = if provozovna.is_some() {
+        StatusCode::OK
+    } else {
+        StatusCode::NOT_FOUND
+    };
+
+    match state.tera.render("provozovna.html", &context) {
+        Ok(html) => (status, Html(html)).into_response(),
+        Err(err) => {
+            eprintln!("Tera error: {:?}", err);
+            (StatusCode::INTERNAL_SERVER_ERROR, Html(format!("Chyba: {}", err))).into_response()
+        }
+    }
+}
+
+/// Nejdelší poznámka, kterou přijmeme. Delší text je skoro jistě omyl
+/// (vložený dokument) a nemá smysl ho ukládat celý.
+const MAX_DELKA_POZNAMKY: usize = 10_000;
+
+/// Tělo formuláře s poznámkou z detailu provozovny.
+#[derive(serde::Deserialize)]
+pub struct PoznamkaForm {
+    pub id: i32,
+    pub poznamka: String,
+    pub zpet: Option<String>,
+}
+
+/// POST /poznamka — uloží volnou poznámku k provozovně.
+///
+/// Text se ukládá tak, jak přišel (jen oříznutý o okolní bílé znaky a délku).
+/// Žádný markdown ani HTML se nezpracovává — šablona hodnotu escapuje
+/// a zobrazuje ji v `<textarea>`.
+pub async fn set_poznamka(
+    State(state): State<AppState>,
+    Form(form): Form<PoznamkaForm>,
+) -> impl IntoResponse {
+    let zpet = bezpecny_navrat(form.zpet.as_deref());
+
+    let poznamka: String = form
+        .poznamka
+        .trim()
+        .chars()
+        .take(MAX_DELKA_POZNAMKY)
+        .collect();
+
+    // updated_at se schválně nemění — řadí se podle něj výpis a záznam
+    // by kvůli poznámce přeskočil nahoru.
+    match sqlx::query!(
+        "UPDATE provozovny SET poznamka = $2 WHERE id = $1",
+        form.id,
+        poznamka
+    )
+    .execute(&state.pool)
+    .await
+    {
+        Ok(_) => Redirect::to(&zpet).into_response(),
+        Err(e) => {
+            eprintln!("DB chyba (poznamka, id = {}): {:?}", form.id, e);
+            Redirect::to(&zpet).into_response()
         }
     }
 }

@@ -4,7 +4,8 @@ mod types;
 use crate::{
     config::Config, routes::{
         apify_webhook, auth_middleware, delete_record, download_file, health, html_page, login,
-        login_page, nastaveni_page, nastaveni_save, run_cron_job, set_kontaktovane, set_smluvene,
+        login_page, nastaveni_page, nastaveni_save, provozovna_detail, run_cron_job,
+        set_kontaktovane, set_poznamka, set_smluvene,
     }
 };
 use anyhow::Result;
@@ -49,6 +50,8 @@ async fn main() -> Result<()> {
 
     let pool: PgPool = PgPool::connect(&config.database_url).await?;
 
+    dorovnej_schema(&pool).await?;
+
     let mut tera: Tera = Tera::default();
     tera.load_from_glob("frontend/**/*")?;
     
@@ -71,10 +74,12 @@ async fn main() -> Result<()> {
 
     let protected = Router::new()
     .route("/", get(html_page))
+    .route("/provozovna/:slug", get(provozovna_detail))
     .route("/delete", post(delete_record))
     .route("/download", post(download_file))
     .route("/kontaktovane", post(set_kontaktovane))
     .route("/smluvene", post(set_smluvene))
+    .route("/poznamka", post(set_poznamka))
     .route("/nastaveni", get(nastaveni_page))
     .route("/nastaveni", post(nastaveni_save))
     .route_layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
@@ -93,5 +98,19 @@ async fn main() -> Result<()> {
     
     axum::serve(listener, app).await?;
     
+    Ok(())
+}
+
+/// Dorovná schéma u databází, které vznikly před přidáním sloupce.
+///
+/// `init.sql` se pouští jen nad prázdným datovým adresářem, takže běžící
+/// nasazení z něj nové sloupce nedostane. Dokud projekt nemá `sqlx migrate`,
+/// řeší to tenhle idempotentní krok při startu — na už dorovnané databázi
+/// neudělá nic.
+async fn dorovnej_schema(pool: &PgPool) -> Result<()> {
+    sqlx::query("ALTER TABLE provozovny ADD COLUMN IF NOT EXISTS poznamka TEXT NOT NULL DEFAULT ''")
+        .execute(pool)
+        .await?;
+
     Ok(())
 }

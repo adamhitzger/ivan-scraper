@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% if p %}{{ p.nazev }}{% else %}Provozovna nenalezena{% endif %} — LeadMgr</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { DEFAULT: '#10b681', dark: '#0e9d6e', tint: '#ddf6ee' },
+                        ink: '#19221e',
+                        muted: '#5b7066',
+                        faint: '#95a7a0',
+                        line: '#e0eae5',
+                        line2: '#d1dfd8',
+                        canvas: '#f6f9f7',
+                        side: '#121f19',
+                        'side-deep': '#0c1611',
+                        'side-line': '#283830',
+                        'side-muted': '#6b907e',
+                        'side-label': '#5b7c6c'
+                    },
+                    fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+
+<body class="bg-canvas font-sans text-ink antialiased"
+      x-data="{ menu: false }"
+      @keydown.escape.window="menu = false">
+
+    <!-- ───────────── Sidebar ───────────── -->
+    <div class="fixed inset-0 z-30 bg-[#0a110e]/50 lg:hidden"
+         x-show="menu" x-cloak x-transition.opacity @click="menu = false"></div>
+
+    <aside class="fixed inset-y-0 left-0 z-40 flex w-[228px] -translate-x-full flex-col bg-side transition-transform duration-200 lg:translate-x-0"
+           :class="menu && 'translate-x-0'">
+
+        <div class="flex h-[68px] shrink-0 items-center gap-2.5 bg-side-deep px-5">
+            <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-base font-bold text-white">✓</span>
+            <span class="text-[15px] font-semibold text-white">LeadMgr</span>
+            <button type="button" class="ml-auto text-side-muted lg:hidden" @click="menu = false" aria-label="Zavřít menu">✕</button>
+        </div>
+
+        <nav class="flex flex-1 flex-col gap-1 px-3 pt-5">
+            <p class="px-2 pb-2 text-[9px] font-semibold uppercase tracking-wider text-side-label">Hlavní menu</p>
+
+            <a href="{{ zpet }}" aria-current="page" class="flex items-center gap-3 rounded-[10px] bg-brand px-3.5 py-2.5 text-[13px] font-semibold text-white">
+                <span class="font-normal">◉</span> Provozovny
+            </a>
+
+            <a href="/nastaveni" class="flex items-center gap-3 rounded-[10px] px-3.5 py-2.5 text-[13px] text-side-muted transition hover:text-white">
+                <span>⚙</span> Nastavení
+            </a>
+        </nav>
+    </aside>
+
+    <!-- ───────────── Shell ───────────── -->
+    <div class="lg:pl-[228px]">
+
+        <header class="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-white px-4 lg:hidden">
+            <button type="button" @click="menu = true" class="text-lg" aria-label="Otevřít menu">☰</button>
+            <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-sm font-bold text-white">✓</span>
+            <span class="text-[15px] font-semibold">LeadMgr</span>
+        </header>
+
+        <header class="sticky top-0 z-20 hidden h-16 items-center border-b border-line bg-white px-7 lg:flex">
+            <a href="{{ zpet }}" class="text-xs text-muted transition hover:text-ink">← Zpět na výpis</a>
+        </header>
+
+        <main class="px-4 py-5 lg:px-7 lg:py-6">
+
+        {% if p %}
+            <a href="{{ zpet }}" class="mb-4 inline-flex items-center gap-1.5 text-xs text-muted transition hover:text-ink lg:hidden">← Zpět na výpis</a>
+
+            <!-- ───────────── Hlavička ───────────── -->
+            <div class="mb-4 rounded-xl border border-line bg-white p-5 lg:p-6">
+                <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                    <div class="min-w-0">
+                        <h1 class="text-xl font-bold leading-snug lg:text-2xl">{{ p.nazev }}</h1>
+
+                        <div class="mt-2.5 flex flex-wrap gap-1.5">
+                            {% if p.mesto %}
+                                <span class="rounded-md bg-brand-tint px-2 py-1 text-[11px] font-medium text-brand-dark">{{ p.mesto }}</span>
+                            {% endif %}
+                            {% if p.hodnoceni %}
+                                <span class="rounded-md bg-brand-tint px-2 py-1 text-[11px] font-medium text-brand-dark">★ {{ p.hodnoceni | round(precision=1) }}{% if p.pocet_recenzi %} ({{ p.pocet_recenzi }}){% endif %}</span>
+                            {% endif %}
+                            {% if p.is_contacted %}
+                                <span class="rounded-md bg-[#e0ebfe] px-2 py-1 text-[11px] font-medium text-[#1d4fd8]">Kontaktovaná</span>
+                            {% endif %}
+                            {% if p.is_closed %}
+                                <span class="rounded-md bg-[#eee6fe] px-2 py-1 text-[11px] font-medium text-[#6d28d9]">Smluvená</span>
+                            {% endif %}
+                            {% if not p.is_contacted and not p.is_closed %}
+                                <span class="rounded-md border border-line2 px-2 py-1 text-[11px] font-medium text-faint">Bez stavu</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Přepínače stavu — `zpet` vrací POST zpátky na tenhle detail -->
+                    <div class="flex shrink-0 flex-wrap gap-2">
+                        <form method="POST" action="/kontaktovane">
+                            <input type="hidden" name="id" value="{{ p.id }}" />
+                            <input type="hidden" name="zpet" value="{{ detail_url }}" />
+                            <input type="hidden" name="hodnota" value="{% if p.is_contacted %}false{% else %}true{% endif %}" />
+                            <button type="submit"
+                                    class="flex h-9 items-center gap-2 rounded-lg px-3.5 text-[13px] font-medium transition {% if p.is_contacted %}bg-brand text-white hover:bg-brand-dark{% else %}border border-line2 bg-white text-muted hover:border-brand hover:text-ink{% endif %}">
+                                <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded {% if p.is_contacted %}bg-white/25 text-[9px] font-bold text-white{% else %}border-[1.5px] border-line2{% endif %}">{% if p.is_contacted %}✓{% endif %}</span>
+                                Kontaktovaná
+                            </button>
+                        </form>
+
+                        <form method="POST" action="/smluvene">
+                            <input type="hidden" name="id" value="{{ p.id }}" />
+                            <input type="hidden" name="zpet" value="{{ detail_url }}" />
+                            <input type="hidden" name="hodnota" value="{% if p.is_closed %}false{% else %}true{% endif %}" />
+                            <button type="submit"
+                                    class="flex h-9 items-center gap-2 rounded-lg px-3.5 text-[13px] font-medium transition {% if p.is_closed %}bg-brand text-white hover:bg-brand-dark{% else %}border border-line2 bg-white text-muted hover:border-brand hover:text-ink{% endif %}">
+                                <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded {% if p.is_closed %}bg-white/25 text-[9px] font-bold text-white{% else %}border-[1.5px] border-line2{% endif %}">{% if p.is_closed %}✓{% endif %}</span>
+                                Smluvená
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ───────────── Kontakt + údaje ───────────── -->
+            <div class="grid gap-4 lg:grid-cols-2">
+
+                <section class="rounded-xl border border-line bg-white p-5">
+                    <h2 class="text-[11px] font-semibold uppercase tracking-wider text-faint">Kontakt</h2>
+
+                    <dl class="mt-3 divide-y divide-line text-[13px]">
+                        <div class="flex gap-4 py-2.5">
+                            <dt class="w-24 shrink-0 text-muted">Telefon</dt>
+                            <dd class="min-w-0 flex-1">
+                                {% if p.telefon %}<a href="tel:{{ p.telefon }}" class="hover:text-brand-dark">{{ p.telefon }}</a>{% else %}<span class="text-faint">—</span>{% endif %}
+                            </dd>
+                        </div>
+
+                        <div class="flex gap-4 py-2.5">
+                            <dt class="w-24 shrink-0 text-muted">E-maily</dt>
+                            <dd class="min-w-0 flex-1">
+                                {% if p.emaily and p.emaily | length > 0 %}
+                                    <div class="flex flex-col gap-1">
+                                        {% for email in p.emaily %}
+                                            <a href="mailto:{{ email }}" class="break-all text-brand-dark hover:underline">{{ email }}</a>
+                                        {% endfor %}
+                                    </div>
+                                {% else %}<span class="text-faint">—</span>{% endif %}
+                            </dd>
+                        </div>
+
+                        <div class="flex gap-4 py-2.5">
+                            <dt class="w-24 shrink-0 text-muted">Web</dt>
+                            <dd class="min-w-0 flex-1">
+                                {% if p.web %}<a href="{{ p.web }}" target="_blank" rel="noopener" class="break-all text-brand-dark hover:underline">{{ p.web }}</a>{% else %}<span class="text-faint">—</span>{% endif %}
+                            </dd>
+                        </div>
+
+                        <div class="flex gap-4 py-2.5">
+                            <dt class="w-24 shrink-0 text-muted">Google Maps</dt>
+                            <dd class="min-w-0 flex-1">
+                                {% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener" class="text-brand-dark hover:underline">Otevřít profil ↗</a>{% else %}<span class="text-faint">—</span>{% endif %}
+                            </dd>
+                        </div>
+                    </dl>
+                </section>
+
+                <section class="rounded-xl border border-line bg-white p-5">
+                    <h2 class="text-[11px] font-semibold uppercase tracking-wider text-faint">Adresa a záznam</h2>
+
+                    <dl class="mt-3 divide-y divide-line text-[13px]">
+                        <div class="flex gap-4 py-2.5">
+                            <dt class="w-24 shrink-0 text-muted">Adresa</dt>
+                            <dd class="min-w-0 flex-1">{% if p.adresa %}{{ p.adresa }}{% else %}<span class="text-faint">—</span>{% endif %}</dd>
+                        </div>
+
+                        <div class="flex gap-4 py-2.5">
+                            <dt class="w-24 shrink-0 text-muted">Město / PSČ</dt>
+                            <dd class="min-w-0 flex-1">
+                                {% if p.mesto %}{{ p.mesto }}{% else %}<span class="text-faint">—</span>{% endif %}{% if p.psc %} · {{ p.psc }}{% endif %}
+                            </dd>
+                        </div>
+
+                        <div class="flex gap-4 py-2.5">
+                            <dt class="w-24 shrink-0 text-muted">Přidáno</dt>
+                            <dd class="min-w-0 flex-1 text-muted">
+                                {% if p.created_at %}{{ p.created_at | truncate(length=10, end="") }}{% else %}<span class="text-faint">—</span>{% endif %}
+                            </dd>
+                        </div>
+
+                        <div class="flex gap-4 py-2.5">
+                            <dt class="w-24 shrink-0 text-muted">Aktualizace</dt>
+                            <dd class="min-w-0 flex-1 text-muted">
+                                {% if p.updated_at %}{{ p.updated_at | truncate(length=10, end="") }}{% else %}<span class="text-faint">—</span>{% endif %}
+                            </dd>
+                        </div>
+
+                        <div class="flex gap-4 py-2.5">
+                            <dt class="w-24 shrink-0 text-muted">Place ID</dt>
+                            <dd class="min-w-0 flex-1 break-all text-[11px] text-faint">{{ p.place_id }}</dd>
+                        </div>
+                    </dl>
+                </section>
+            </div>
+
+            <!-- ───────────── Poznámka ─────────────
+                 Prostý text. Tera hodnotu escapuje a zobrazuje se zpátky
+                 v textarea, takže se nikde neinterpretuje jako HTML. -->
+            <section class="mt-4 rounded-xl border border-line bg-white p-5">
+                <form method="POST" action="/poznamka" x-data="{ puvodni: null, zmeneno: false }"
+                      x-init="puvodni = $refs.pole.value">
+                    <input type="hidden" name="id" value="{{ p.id }}" />
+                    <input type="hidden" name="zpet" value="{{ detail_url }}" />
+
+                    <div class="flex items-center justify-between gap-3">
+                        <label for="poznamka" class="text-[11px] font-semibold uppercase tracking-wider text-faint">Poznámka</label>
+                        <span class="text-[11px] text-faint" x-show="zmeneno" x-cloak>neuloženo</span>
+                    </div>
+
+                    <textarea id="poznamka" name="poznamka" rows="6" x-ref="pole"
+                              @input="zmeneno = ($refs.pole.value !== puvodni)"
+                              placeholder="Kdy volat, s kým jednat, co si domluvili…"
+                              class="mt-2.5 w-full resize-y rounded-lg border border-line2 bg-canvas px-3 py-2.5 text-[13px] leading-relaxed text-ink placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-brand/25">{{ p.poznamka }}</textarea>
+
+                    <div class="mt-3 flex justify-end">
+                        <button type="submit"
+                                class="h-9 rounded-lg bg-brand px-4 text-[13px] font-semibold text-white transition hover:bg-brand-dark">
+                            Uložit poznámku
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- ───────────── Smazání ─────────────
+                 Po smazání se vrací do výpisu, ne na detail — ten už neexistuje. -->
+            <div class="mt-4 flex justify-end rounded-xl border border-line bg-white p-4">
+                <form method="POST" action="/delete">
+                    <input type="hidden" name="id" value="{{ p.id }}" />
+                    <input type="hidden" name="zpet" value="{{ zpet }}" />
+                    <button type="submit"
+                            class="flex h-9 items-center gap-2 rounded-lg border border-red-200 px-3.5 text-[13px] font-medium text-red-500 transition hover:bg-red-50 hover:text-red-700 focus:outline-none focus:ring-2 focus:ring-red-500/30">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4" aria-hidden="true">
+                            <path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6" />
+                        </svg>
+                        Smazat provozovnu
+                    </button>
+                </form>
+            </div>
+
+        {% else %}
+            <div class="mx-auto max-w-[420px] rounded-xl border border-line bg-white px-6 py-16 text-center">
+                <p class="text-3xl">🔍</p>
+                <h1 class="mt-3 text-lg font-semibold">Provozovna nenalezena</h1>
+                <p class="mt-1.5 text-[13px] text-muted">Odkaz míří na záznam, který v databázi není — nejspíš už byl smazán.</p>
+                <a href="{{ zpet }}" class="mt-5 inline-flex h-9 items-center rounded-lg bg-brand px-4 text-[13px] font-semibold text-white transition hover:bg-brand-dark">
+                    Zpět na výpis
+                </a>
+            </div>
+        {% endif %}
+
+        </main>
+    </div>
+
+</body>
+</html>

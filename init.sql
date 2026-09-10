@@ -14,7 +14,9 @@ CREATE TABLE provozovny (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     is_contacted BOOLEAN NOT NULL DEFAULT FALSE,
-    is_closed BOOLEAN NOT NULL DEFAULT FALSE
+    is_closed BOOLEAN NOT NULL DEFAULT FALSE,
+    -- Volná poznámka z detailu provozovny. Prostý text, žádný markdown ani HTML.
+    poznamka TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE provozovny_emaily (

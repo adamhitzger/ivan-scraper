@@ -1,0 +1,124 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT\n            p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,\n            p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.created_at, p.updated_at,\n            array_remove(array_agg(e.email), NULL) AS emaily,\n            p.is_contacted, p.is_closed, p.poznamka\n        FROM provozovny p\n        LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id\n        WHERE p.id = $1\n        GROUP BY p.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "place_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "nazev",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "telefon",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "telefon_raw",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "web",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "adresa",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "mesto",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 8,
+        "name": "psc",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "hodnoceni",
+        "type_info": "Float4"
+      },
+      {
+        "ordinal": 10,
+        "name": "pocet_recenzi",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 11,
+        "name": "url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 14,
+        "name": "emaily",
+        "type_info": "TextArray"
+      },
+      {
+        "ordinal": 15,
+        "name": "is_contacted",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 16,
+        "name": "is_closed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 17,
+        "name": "poznamka",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "8357e074fff648aa65d38c65e673736defcad3b6012df579266a2274e59ec5f7"
+}
