@@ -8,6 +8,9 @@ services:
   ivan-scraper:
     # DOPLŇ svého GitHub uživatele/organizaci (malými písmeny):
     image: ghcr.io/adamhitzger/ivan-scraper:latest
+    # Bez tohohle Coolify při deployi použije `latest`, který už má v lokální cachi,
+    # takže by na serveru dál běžela stará verze. `always` si vynutí dotaz do registry.
+    pull_policy: always
     expose:
       - "3000"
     env_file:
