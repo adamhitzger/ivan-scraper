@@ -1,5 +1,10 @@
 Příkazy
 
+0. Github push
+ - git add .
+ - git commit -m "nazev_commitu"
+ - git push -u origin master
+
 1. Update verze
 - just code
     - docker compose up -d --build

@@ -67,5 +67,7 @@ jobs:
       - name: Spustit deploy v Coolify
         if: env.COOLIFY_WEBHOOK_URL != ''
         run: |
-          curl -fsS -X GET "$COOLIFY_WEBHOOK_URL" \
+          # Coolify 4.3.9+ přijímá na /api/v1/deploy jen POST, GET vrací 405.
+          # --fail-with-body: při chybě vypíše i tělo odpovědi, ať je v logu důvod.
+          curl --fail-with-body -sS -X POST "$COOLIFY_WEBHOOK_URL" \
             -H "Authorization: Bearer $COOLIFY_TOKEN"
