@@ -20,7 +20,7 @@ use reqwest::{
     Method,
 };
 use sqlx::PgPool;
-use crate::{AppState, types::{ApifyWebhook, Place, Provozovna, ProvozovnaExport, ProvozovnaView, id_ze_slugu}};
+use crate::{AppState, types::{ApifyWebhook, Place, Provozovna, ProvozovnaExport}};
 use tera::{
     Context, context
 };
@@ -120,8 +120,8 @@ impl Filtry {
     }
 
     /// Odkaz na detail provozovny, filtry s sebou (kvůli odkazu „zpět“).
-    pub fn url_detailu(&self, slug: &str) -> String {
-        format!("/provozovna/{}?page={}{}", slug, self.page, self.suffix())
+    pub fn url_detailu(&self, id: i32) -> String {
+        format!("/provozovna/{}?page={}{}", id, self.page, self.suffix())
     }
 
     /// Jiné město, stav zůstává. Stránkování se resetuje — na páté stránce
@@ -202,13 +202,7 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
         Err(e) => eprintln!("DB error: {:?}", e),
     }
 
-    // Slug pro odkaz na detail se dopočítává až tady — v SQL by převod
-    // diakritiky znamenal rozšíření `unaccent`.
-    let data: Vec<ProvozovnaView> = kontakty
-        .unwrap_or_default()
-        .into_iter()
-        .map(ProvozovnaView::from)
-        .collect();
+    let data: Vec<Provozovna> = kontakty.unwrap_or_default();
 
     let mesta:Vec<String> = sqlx::query!(
         "SELECT DISTINCT mesto FROM provozovny WHERE mesto IS NOT NULL ORDER BY mesto"
@@ -1034,21 +1028,19 @@ pub async fn set_smluvene(
     }
 }
 
-/// GET /provozovna/:slug — detail jedné provozovny.
+/// GET /provozovna/:id — detail jedné provozovny.
 ///
-/// Slug má tvar `nazev-id`, ale závazné je jen `id` na konci: podle něj se
-/// řádek dohledává, takže přejmenování nerozbije rozeslané odkazy. Když se
-/// tvar rozejde s kanonickým, přesměruje se, ať jeden záznam nežije na více
-/// adresách. Query parametry (`page`, `search`, `stav`) nesou filtr z výpisu,
-/// aby odkaz „zpět" vrátil uživatele tam, odkud přišel.
+/// Query parametry (`page`, `search`, `stav`) nesou filtr z výpisu, aby odkaz
+/// „zpět" vrátil uživatele tam, odkud přišel. Nečíselné `id` se bere jako
+/// neexistující záznam (stránka 404), ne jako chyba parsování z axumu.
 pub async fn provozovna_detail(
     State(state): State<AppState>,
-    Path(slug): Path<String>,
+    Path(id): Path<String>,
     params: Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
     let filtry = Filtry::z_params(&params);
 
-    let Some(id) = id_ze_slugu(&slug) else {
+    let Ok(id) = id.parse::<i32>() else {
         return render_detail(&state, None, &filtry);
     };
 
@@ -1079,23 +1071,17 @@ pub async fn provozovna_detail(
         }
     };
 
-    let view = ProvozovnaView::from(provozovna);
-
-    if view.slug != slug {
-        return Redirect::permanent(&filtry.url_detailu(&view.slug)).into_response();
-    }
-
-    render_detail(&state, Some(&view), &filtry)
+    render_detail(&state, Some(&provozovna), &filtry)
 }
 
 /// Vykreslí detail. `provozovna == None` znamená neexistující záznam —
 /// vrací se 404, ať se chybný odkaz nechová jako platná stránka.
-fn render_detail(state: &AppState, provozovna: Option<&ProvozovnaView>, filtry: &Filtry) -> AxumResponse {
+fn render_detail(state: &AppState, provozovna: Option<&Provozovna>, filtry: &Filtry) -> AxumResponse {
     let context = context! {
         p => &provozovna,
         // Odkaz zpět do výpisu i cíl přesměrování po akcích na této stránce.
         zpet => &filtry.url(),
-        detail_url => &provozovna.map(|p| filtry.url_detailu(&p.slug)).unwrap_or_default(),
+        detail_url => &provozovna.map(|p| filtry.url_detailu(p.id)).unwrap_or_default(),
     };
 
     let status = if provozovna.is_some() {

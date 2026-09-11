@@ -50,7 +50,9 @@ async fn main() -> Result<()> {
 
     let pool: PgPool = PgPool::connect(&config.database_url).await?;
 
-    dorovnej_schema(&pool).await?;
+    // Migrace jsou zapečené v binárce (`migrations/`), takže nový image si schéma
+    // dorovná sám při startu — na produkci se nic nespouští ručně.
+    sqlx::migrate!().run(&pool).await?;
 
     let mut tera: Tera = Tera::default();
     tera.load_from_glob("frontend/**/*")?;
@@ -74,7 +76,7 @@ async fn main() -> Result<()> {
 
     let protected = Router::new()
     .route("/", get(html_page))
-    .route("/provozovna/:slug", get(provozovna_detail))
+    .route("/provozovna/:id", get(provozovna_detail))
     .route("/delete", post(delete_record))
     .route("/download", post(download_file))
     .route("/kontaktovane", post(set_kontaktovane))
@@ -98,19 +100,5 @@ async fn main() -> Result<()> {
     
     axum::serve(listener, app).await?;
     
-    Ok(())
-}
-
-/// Dorovná schéma u databází, které vznikly před přidáním sloupce.
-///
-/// `init.sql` se pouští jen nad prázdným datovým adresářem, takže běžící
-/// nasazení z něj nové sloupce nedostane. Dokud projekt nemá `sqlx migrate`,
-/// řeší to tenhle idempotentní krok při startu — na už dorovnané databázi
-/// neudělá nic.
-async fn dorovnej_schema(pool: &PgPool) -> Result<()> {
-    sqlx::query("ALTER TABLE provozovny ADD COLUMN IF NOT EXISTS poznamka TEXT NOT NULL DEFAULT ''")
-        .execute(pool)
-        .await?;
-
     Ok(())
 }

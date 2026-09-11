@@ -18,7 +18,7 @@ tower = "0.4"
 tower-http = { version = "0.5", features = ["trace", "cors"] }
 tokio-cron-scheduler = "0.15"
 chrono-tz = "0.10"
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "chrono", "macros"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "chrono", "macros", "migrate"] }
 tera = {version = "2", features = ["glob_fs"]}
 chrono = { version = "0.4.45", features = ["serde"] }
 lettre = { version = "0.11", default-features = false, features = [
