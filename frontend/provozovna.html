@@ -6,6 +6,8 @@
     <title>{% if p %}{{ p.nazev }}{% else %}Provozovna nenalezena{% endif %} — LeadMgr</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://unpkg.com/trix@2.1.15/dist/trix.css">
+    <script src="https://unpkg.com/trix@2.1.15/dist/trix.umd.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -33,7 +35,24 @@
         }
     </script>
     <style>
-        [x-cloak] { display: none !important; }
+        [x-cloak] { 
+            display: none !important; 
+        }
+        trix-toolbar .trix-button-group--file-tools { 
+            display: none; 
+        }
+        trix-editor ul, .poznamka-html ul { list-style: disc;    padding-left: 1.5rem; margin: .5rem 0; }
+        trix-editor ol, .poznamka-html ol { list-style: decimal; padding-left: 1.5rem; margin: .5rem 0; }
+        trix-editor li, .poznamka-html li { margin: .15rem 0; }
+        trix-editor a,  .poznamka-html a  { color: #10b681; text-decoration: underline; }
+        trix-editor h1, .poznamka-html h1 { font-size: 1.125rem; font-weight: 600; margin: .5rem 0; }
+        trix-editor blockquote, .poznamka-html blockquote {
+            border-left: 3px solid #d1dfd8; padding-left: .75rem; color: #5b7066; margin: .5rem 0;
+        }
+        trix-editor pre, .poznamka-html pre {
+            background: #eef3f0; padding: .5rem .75rem; border-radius: .375rem;
+            font-size: 12px; white-space: pre-wrap; margin: .5rem 0;
+        }
     </style>
 </head>
 
@@ -223,7 +242,9 @@
                  v textarea, takže se nikde neinterpretuje jako HTML. -->
             <section class="mt-4 rounded-xl border border-line bg-white p-5">
                 <form method="POST" action="/poznamka" x-data="{ puvodni: null, zmeneno: false }"
-                      x-init="puvodni = $refs.pole.value">
+                    x-init="puvodni = $refs.pole.value"
+                    @trix-change="zmeneno = ($refs.pole.value !== puvodni)"
+                    @trix-file-accept.prevent>
                     <input type="hidden" name="id" value="{{ p.id }}" />
                     <input type="hidden" name="zpet" value="{{ detail_url }}" />
 
@@ -232,14 +253,14 @@
                         <span class="text-[11px] text-faint" x-show="zmeneno" x-cloak>neuloženo</span>
                     </div>
 
-                    <textarea id="poznamka" name="poznamka" rows="6" x-ref="pole"
-                              @input="zmeneno = ($refs.pole.value !== puvodni)"
-                              placeholder="Kdy volat, s kým jednat, co si domluvili…"
-                              class="mt-2.5 w-full resize-y rounded-lg border border-line2 bg-canvas px-3 py-2.5 text-[13px] leading-relaxed text-ink placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-brand/25">{{ p.poznamka }}</textarea>
+                    <!-- Tera value escapuje → prohlížeč atribut dekóduje → Trix dostane čisté HTML. To je správně, NE | safe. -->
+                    <input id="poznamka" type="hidden" name="poznamka" x-ref="pole" value="{{ p.poznamka }}" />
+                    <trix-editor input="poznamka"
+                                placeholder="Kdy volat, s kým jednat, co si domluvili…"
+                                class="mt-2.5 min-h-[9rem] rounded-lg border border-line2 bg-canvas px-3 py-2.5 text-[13px] leading-relaxed text-ink focus:outline-none focus:ring-2 focus:ring-brand/25"></trix-editor>
 
                     <div class="mt-3 flex justify-end">
-                        <button type="submit"
-                                class="h-9 rounded-lg bg-brand px-4 text-[13px] font-semibold text-white transition hover:bg-brand-dark">
+                        <button type="submit" class="h-9 rounded-lg bg-brand px-4 text-[13px] font-semibold text-white transition hover:bg-brand-dark">
                             Uložit poznámku
                         </button>
                     </div>

@@ -7,7 +7,8 @@ use axum::{
 };
 use tokio_cron_scheduler::Job;
 use chrono_tz::Europe::Prague;
-use std::{collections::HashMap, error::Error, time::{Duration, Instant}};
+use tracing::{info, warn,error};
+use std::{collections::{HashMap, HashSet}, error::Error, sync::LazyLock, time::{Duration, Instant}};
 use serde_json::{
     Value,
     json
@@ -32,10 +33,14 @@ pub async fn send_kontakty_email(
     nove_kontakty: Vec<&Place>,
     recipient: &str,
 ) -> anyhow::Result<()> {
+    let pocet_novych = nove_kontakty.len();
+
     let mut context = tera::Context::new();
     context.insert("kontakty", &nove_kontakty);
 
     let html = state.tera.render("email_kontakty.html", &context)?;
+
+    info!(prijemce = recipient, pocet_novych, "Odesílám e-mail s novými kontakty");
 
     let email = Message::builder()
         .from("ikt2stupen@gmail.com".parse()?)
@@ -44,9 +49,27 @@ pub async fn send_kontakty_email(
         .header(ContentType::TEXT_HTML)
         .body(html)?;
 
-    state.smtp.send(email).await?;
-
-    Ok(())
+    match state.smtp.send(email).await{ 
+        Ok(odpoved) => {
+            let hlaska: String = odpoved.message().collect::<Vec<_>>().join(" ");
+            if odpoved.is_positive() {
+                info!(
+                    prijemce = recipient,
+                    kod = %odpoved.code(),
+                    hlaska,
+                    "E-mail přijat SMTP serverem"
+                );
+            } else {
+                // 3xx/4xx bez Err — vzácné, ale ať to není tiché.
+                warn!(prijemce = recipient, kod = %odpoved.code(), hlaska, "SMTP server e-mail nepotvrdil");
+            }
+            Ok(())
+        }
+        Err(e) => {
+            error!(prijemce = recipient, chyba = %e, "Odeslání e-mailu selhalo");
+            Err(e.into())
+        }
+    }
 }
 
 /// Percent-encoding hodnoty do query stringu. Vlastní, ať kvůli pár řádkům
@@ -311,9 +334,6 @@ pub const MAX_VYRAZU: usize = 10;
 /// V scraper_config je vždy jen jeden řádek, id = 1.
 const CONFIG_ID: i32 = 1;
 
-/// Načte konfiguraci scraperu (řádek id = 1): lokaci a neprázdné hledané výrazy.
-/// `Ok(None)` = řádek neexistuje.
-
 async fn get_data_from_popup(
     pool: &PgPool,
     limit: i64,
@@ -391,10 +411,25 @@ fn do_xml(data: &[ProvozovnaExport]) -> Result<Vec<u8>, quick_xml::SeError> {
     Ok(out.into_bytes())
 }
 
-pub async fn nacti_config(pool: &PgPool) -> Result<Option<(String, Vec<String>)>, sqlx::Error> {
+/// Rozmezí pro `max_kontaktu`. Nula by actor spustila naprázdno, horní
+/// hranice brzdí překlep, který by spálil kredit na Apify.
+pub const MIN_KONTAKTU: i32 = 1;
+pub const MAX_KONTAKTU: i32 = 50;
+
+/// Konfigurace scraperu z řádku scraper_config (id = 1).
+pub struct ScraperConfig {
+    pub lokace: String,
+    /// Jen neprázdné hledané výrazy.
+    pub vyrazy: Vec<String>,
+    /// `maxCrawledPlacesPerSearch` pro Apify actor.
+    pub max_kontaktu: i32,
+}
+
+/// Načte konfiguraci scraperu (řádek id = 1). `Ok(None)` = řádek neexistuje.
+pub async fn nacti_config(pool: &PgPool) -> Result<Option<ScraperConfig>, sqlx::Error> {
     let row = sqlx::query!(
         r#"
-        SELECT lokace,
+        SELECT lokace, max_kontaktu,
                vyraz1, vyraz2, vyraz3, vyraz4, vyraz5,
                vyraz6, vyraz7, vyraz8, vyraz9, vyraz10
         FROM scraper_config
@@ -423,7 +458,11 @@ pub async fn nacti_config(pool: &PgPool) -> Result<Option<(String, Vec<String>)>
         .filter(|v| !v.trim().is_empty())
         .collect();
 
-        (config.lokace, vyrazy)
+        ScraperConfig {
+            lokace: config.lokace,
+            vyrazy,
+            max_kontaktu: config.max_kontaktu,
+        }
     }))
 }
 
@@ -458,6 +497,7 @@ fn render_nastaveni(
     state: &AppState,
     lokace: &str,
     vyrazy: &[String],
+    max_kontaktu: i32,
     ulozeno: bool,
     chyba: &str,
 ) -> Html<String> {
@@ -472,6 +512,9 @@ fn render_nastaveni(
         lokace => &lokace,
         vyrazy => &vyrazy,
         max_vyrazu => &MAX_VYRAZU,
+        max_kontaktu => &max_kontaktu,
+        min_kontaktu_limit => &MIN_KONTAKTU,
+        max_kontaktu_limit => &MAX_KONTAKTU,
         ulozeno => &ulozeno,
         chyba => &chyba
     };
@@ -489,22 +532,29 @@ pub async fn nastaveni_page(
     State(state): State<AppState>,
     params: Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
-    let (lokace, vyrazy) = match nacti_config(&state.pool).await {
-        Ok(Some(config)) => config,
+    let config = match nacti_config(&state.pool).await {
+        Ok(Some(config)) => Some(config),
         Ok(None) => {
             eprintln!("scraper_config s id = {} neexistuje", CONFIG_ID);
-            (String::new(), Vec::new())
+            None
         }
         Err(e) => {
             eprintln!("DB error (scraper_config): {:?}", e);
-            (String::new(), Vec::new())
+            None
         }
+    };
+
+    // Bez řádku v DB se stránka vykreslí prázdná, ať se dá aspoň zobrazit.
+    let (lokace, vyrazy, max_kontaktu) = match config {
+        Some(c) => (c.lokace, c.vyrazy, c.max_kontaktu),
+        None => (String::new(), Vec::new(), 30),
     };
 
     render_nastaveni(
         &state,
         &lokace,
         &vyrazy,
+        max_kontaktu,
         params.contains_key("ulozeno"),
         params.get("chyba").map(String::as_str).unwrap_or_default(),
     )
@@ -517,10 +567,13 @@ pub async fn nastaveni_save(
 ) -> impl IntoResponse {
     let mut lokace = String::new();
     let mut vyrazy: Vec<String> = Vec::new();
+    // None = pole chybí nebo není číslo; rozsah se kontroluje níž.
+    let mut max_kontaktu: Option<i32> = None;
 
     for (klic, hodnota) in pole {
         match klic.as_str() {
             "lokace" => lokace = hodnota.trim().to_string(),
+            "max_kontaktu" => max_kontaktu = hodnota.trim().parse().ok(),
             "vyraz" => {
                 let vyraz = hodnota.trim().to_string();
                 if !vyraz.is_empty() && vyrazy.len() < MAX_VYRAZU {
@@ -531,22 +584,32 @@ pub async fn nastaveni_save(
         }
     }
 
+    // Počet kontaktů musí být v rozsahu — mimo něj se nic neuloží a formulář
+    // se vykreslí znovu s hodnotou, kterou uživatel zadal (nebo s výchozí).
+    let max_kontaktu = match max_kontaktu {
+        Some(n) if (MIN_KONTAKTU..=MAX_KONTAKTU).contains(&n) => n,
+        jiny => {
+            let zobraz = jiny.unwrap_or(30);
+            return render_nastaveni(&state, &lokace, &vyrazy, zobraz, false, "pocet").into_response();
+        }
+    };
+
     // Ověření lokace proti Nominatimu. Prázdnou neověřujeme — ta uloženou hodnotu nepřepíše.
     // Při neúspěchu se stránka vykreslí rovnou (ne redirect), aby uživatel nepřišel o rozepsané hodnoty.
     if !lokace.is_empty() {
         if lokace.chars().count() > MAX_DELKA_LOKACE {
-            return render_nastaveni(&state, &lokace, &vyrazy, false, "lokace").into_response();
+            return render_nastaveni(&state, &lokace, &vyrazy, max_kontaktu, false, "lokace").into_response();
         }
 
         match overit_lokaci(&state, &lokace).await {
             Ok(true) => {}
             Ok(false) => {
                 println!("Lokace '{}' nebyla na Nominatimu nalezena", lokace);
-                return render_nastaveni(&state, &lokace, &vyrazy, false, "lokace").into_response();
+                return render_nastaveni(&state, &lokace, &vyrazy, max_kontaktu, false, "lokace").into_response();
             }
             Err(e) => {
                 eprintln!("Ověření lokace '{}' selhalo: {:?}", lokace, e);
-                return render_nastaveni(&state, &lokace, &vyrazy, false, "overeni").into_response();
+                return render_nastaveni(&state, &lokace, &vyrazy, max_kontaktu, false, "overeni").into_response();
             }
         }
     }
@@ -568,6 +631,7 @@ pub async fn nastaveni_save(
             vyraz8  = $10,
             vyraz9  = $11,
             vyraz10 = $12,
+            max_kontaktu = $13,
             updated_at = NOW()
         WHERE id = $1
         "#,
@@ -582,7 +646,8 @@ pub async fn nastaveni_save(
         vyraz(6),
         vyraz(7),
         vyraz(8),
-        vyraz(9)
+        vyraz(9),
+        max_kontaktu
     )
     .execute(&state.pool)
     .await;
@@ -629,7 +694,7 @@ pub async fn apify_webhook(
     let dataset_id = payload.resource.default_dataset_id;
     tokio::spawn(async move {
         if let Err(e) = fetch_dataset(&state, &dataset_id).await {
-            eprintln!("Fetch datasetu ve webhooku selhal: {e:?}");
+            tracing::error!(dataset_id, chyba = ?e, "Fetch datasetu ve webhooku selhal");
         }
     });
     StatusCode::OK
@@ -721,7 +786,7 @@ pub async fn run_actor(state: &AppState) -> Result<(), Box<dyn Error>> {
 
     println!("Spuštění cron jobu, načtení výrazů a lokace");
 
-    let (lokace, vyrazy) = match nacti_config(&state.pool).await {
+    let ScraperConfig { lokace, vyrazy, max_kontaktu } = match nacti_config(&state.pool).await {
         Ok(Some(config)) => config,
         Ok(None) => {
             eprintln!("scraper_config s id = {} neexistuje, actor se nespouští", CONFIG_ID);
@@ -739,7 +804,7 @@ pub async fn run_actor(state: &AppState) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    println!("Scrapuji {:?} v lokaci '{}'", vyrazy, lokace);
+    println!("Scrapuji {:?} v lokaci '{}', max {} míst na výraz", vyrazy, lokace, max_kontaktu);
 
     let url: String = format!("https://api.apify.com/v2/actors/{}/runs", state.config.apify_actor_id);
 
@@ -747,7 +812,7 @@ pub async fn run_actor(state: &AppState) -> Result<(), Box<dyn Error>> {
         "includeWebResults": true,
         "language": "cs",
         "locationQuery": lokace,
-        "maxCrawledPlacesPerSearch": 30,
+        "maxCrawledPlacesPerSearch": max_kontaktu,
         "maximumLeadsEnrichmentRecords": 0,
         "scrapeContacts": true,
         "scrapeDirectories": false,
@@ -1101,7 +1166,7 @@ fn render_detail(state: &AppState, provozovna: Option<&Provozovna>, filtry: &Fil
 
 /// Nejdelší poznámka, kterou přijmeme. Delší text je skoro jistě omyl
 /// (vložený dokument) a nemá smysl ho ukládat celý.
-const MAX_DELKA_POZNAMKY: usize = 10_000;
+const MAX_DELKA_POZNAMKY: usize = 50_000;
 
 /// Tělo formuláře s poznámkou z detailu provozovny.
 #[derive(serde::Deserialize)]
@@ -1111,23 +1176,34 @@ pub struct PoznamkaForm {
     pub zpet: Option<String>,
 }
 
-/// POST /poznamka — uloží volnou poznámku k provozovně.
-///
-/// Text se ukládá tak, jak přišel (jen oříznutý o okolní bílé znaky a délku).
-/// Žádný markdown ani HTML se nezpracovává — šablona hodnotu escapuje
-/// a zobrazuje ji v `<textarea>`.
+static SANITIZER: LazyLock<ammonia::Builder<'static>> = LazyLock::new(|| {
+    let mut b = ammonia::Builder::default();
+    b.tags(HashSet::from([
+        "div", "br", "strong", "em", "del", "a",
+        "h1", "blockquote", "pre", "ul", "ol", "li",
+    ]))
+    .tag_attributes(std::collections::HashMap::from([
+        ("a", HashSet::from(["href"])),
+    ]))
+    .url_schemes(HashSet::from(["http", "https", "mailto", "tel"]))
+    .link_rel(Some("noopener noreferrer nofollow"));
+    b
+});
+
 pub async fn set_poznamka(
     State(state): State<AppState>,
     Form(form): Form<PoznamkaForm>,
 ) -> impl IntoResponse {
     let zpet = bezpecny_navrat(form.zpet.as_deref());
 
-    let poznamka: String = form
+    let surove: String = form
         .poznamka
         .trim()
         .chars()
         .take(MAX_DELKA_POZNAMKY)
         .collect();
+
+    let poznamka = SANITIZER.clean(&surove).to_string();
 
     // updated_at se schválně nemění — řadí se podle něj výpis a záznam
     // by kvůli poznámce přeskočil nahoru.

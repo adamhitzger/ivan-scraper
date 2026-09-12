@@ -26,6 +26,7 @@ services:
         postgres:
           condition: service_healthy
     environment:
+      RUST_LOG: "info,lettre=debug"
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/scraper_db
 
   postgres:

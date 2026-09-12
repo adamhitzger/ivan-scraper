@@ -6,12 +6,23 @@ Příkazy
  - git push -u origin master
 
 1. Update verze
-- just code
+ - just code
     - docker compose up -d --build
- - code with queries
+ - code with queries (schéma se nemění)
     - docker compose up -d
     - cargo sqlx prepare
-    - docker compose --build
+    - docker compose up -d --build
+ - změna schématu (nový sloupec, tabulka…)
+    - sqlx migrate add nazev_zmeny        >> vytvoří migrations/<timestamp>_nazev_zmeny.sql, napsat do něj SQL
+    - docker compose up -d                >> běží postgres na localhost:5432
+    - sqlx migrate run                    >> aplikuje migraci do lokální DB (čte DATABASE_URL z .env)
+    - code with queries
+    - cargo sqlx prepare                  >> .sqlx cache proti už zmigrované DB
+    - docker compose up -d --build
+    - git add migrations/ .sqlx/          >> obojí musí do commitu, jinak build v Actions spadne
+ - už aplikovanou migraci nikdy neupravovat (sqlx hlídá checksum) — vždy nový soubor
+ - produkce: nic ručně, app si migrace pustí sama při startu nového image
+ - stav migrací: sqlx migrate info
 
 2. GHCR push&deploy
  - Login

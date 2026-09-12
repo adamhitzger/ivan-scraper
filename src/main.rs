@@ -62,7 +62,7 @@ async fn main() -> Result<()> {
         std::env::var("SMTP_PASSWORD")?,
     );
 
-    let smtp = AsyncSmtpTransport::<Tokio1Executor>::relay(&std::env::var("SMTP_HOST")?)? 
+    let smtp = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&std::env::var("SMTP_HOST").expect("Chybí SMTP_HOST v .env"))? 
         .credentials(creds)
         .build();
     let sessions = Arc::new(DashMap::new());

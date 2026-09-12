@@ -132,6 +132,28 @@
                     </div>
                 </section>
 
+                <!-- ───────────── Počet kontaktů ───────────── -->
+                <section class="overflow-hidden rounded-xl border border-line bg-white">
+
+                    <div class="border-b border-line px-5 py-4">
+                        <h2 class="text-sm font-semibold">Počet kontaktů</h2>
+                        <p class="mt-1 text-xs text-faint">Kolik míst Apify stáhne na jeden hledaný výraz (maxCrawledPlacesPerSearch)</p>
+                    </div>
+
+                    <div class="px-5 py-4">
+                        <label for="max_kontaktu" class="text-[11px] font-medium text-muted">Míst na výraz</label>
+                        <div class="mt-2 flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-4">
+                            <input type="number" id="max_kontaktu" name="max_kontaktu" value="{{ max_kontaktu }}"
+                                   min="{{ min_kontaktu_limit }}" max="{{ max_kontaktu_limit }}" step="1" inputmode="numeric" required
+                                   class="h-9 w-full rounded-lg border border-line2 bg-canvas px-3 text-xs text-ink placeholder:text-faint focus:outline-none focus:ring-2 focus:ring-brand/25 lg:w-[140px]" />
+                            <p class="text-[11px] text-faint">
+                                {{ min_kontaktu_limit }}–{{ max_kontaktu_limit }}. Celkem se stáhne nejvýš
+                                <span class="font-medium text-muted">počet výrazů × tato hodnota</span> míst.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+
                 <!-- ───────────── Lokace scrapování ───────────── -->
                 <section class="overflow-hidden rounded-xl border border-line bg-white">
 
@@ -168,6 +190,10 @@
         {% elif chyba == "lokace" %}
             {% set_global toast_styl = "border-red-200 bg-red-50 text-red-700" %}
             {% set_global toast_text = "Takovou lokaci se na OpenStreetMap nepodařilo najít. Zkontrolujte překlep — nic nebylo uloženo." %}
+            {% set_global toast_trvani = 7000 %}
+        {% elif chyba == "pocet" %}
+            {% set_global toast_styl = "border-red-200 bg-red-50 text-red-700" %}
+            {% set_global toast_text = "Počet kontaktů musí být celé číslo od " ~ min_kontaktu_limit ~ " do " ~ max_kontaktu_limit ~ " — nic nebylo uloženo." %}
             {% set_global toast_trvani = 7000 %}
         {% elif chyba == "overeni" %}
             {% set_global toast_styl = "border-amber-200 bg-amber-50 text-amber-800" %}

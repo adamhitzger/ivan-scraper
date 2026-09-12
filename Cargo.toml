@@ -29,3 +29,4 @@ dashmap = "6"
 uuid = { version = "1", features = ["v4"] }
 quick-xml = { version = "0.37", features = ["serialize"] }
 rust_xlsxwriter = "0.96"
+ammonia = "4"

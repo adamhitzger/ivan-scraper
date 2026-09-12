@@ -24,6 +24,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/scraper_db
 
+
   postgres:
     image: postgres:16-alpine
     restart: always
