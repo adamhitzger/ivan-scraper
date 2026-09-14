@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM provozovny_emaily WHERE provozovna_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a483495adc4dca3124e0cb17ef224f13a634ca6bd84d7e4fa6827f7aee4f4cbe"
+}

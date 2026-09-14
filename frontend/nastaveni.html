@@ -154,6 +154,25 @@
                     </div>
                 </section>
 
+                <!-- ───────────── Automatické spouštění ─────────────
+                     Nezaškrtnutý checkbox se v POSTu vůbec nepošle — server bere
+                     chybějící pole jako false. -->
+                <section class="overflow-hidden rounded-xl border border-line bg-white">
+
+                    <div class="border-b border-line px-5 py-4">
+                        <h2 class="text-sm font-semibold">Automatické spouštění</h2>
+                        <p class="mt-1 text-xs text-faint">Denní cron spouští Apify scraper každý den v 6:00. Vypnutím se scraper nespouští, nastavení zůstává uložené.</p>
+                    </div>
+
+                    <div class="px-5 py-4">
+                        <label for="cron_enabled" class="flex cursor-pointer items-center gap-3">
+                            <input type="checkbox" id="cron_enabled" name="cron_enabled" value="1" {% if cron_enabled %}checked{% endif %}
+                                   class="h-4 w-4 rounded border-line2 text-brand focus:ring-2 focus:ring-brand/25" />
+                            <span class="text-xs font-medium text-muted">Spouštět scraper automaticky (denně v 6:00)</span>
+                        </label>
+                    </div>
+                </section>
+
                 <!-- ───────────── Lokace scrapování ───────────── -->
                 <section class="overflow-hidden rounded-xl border border-line bg-white">
 

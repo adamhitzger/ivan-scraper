@@ -423,13 +423,15 @@ pub struct ScraperConfig {
     pub vyrazy: Vec<String>,
     /// `maxCrawledPlacesPerSearch` pro Apify actor.
     pub max_kontaktu: i32,
+    /// Vypínač denního cron jobu (checkbox v nastavení).
+    pub cron_enabled: bool,
 }
 
 /// Načte konfiguraci scraperu (řádek id = 1). `Ok(None)` = řádek neexistuje.
 pub async fn nacti_config(pool: &PgPool) -> Result<Option<ScraperConfig>, sqlx::Error> {
     let row = sqlx::query!(
         r#"
-        SELECT lokace, max_kontaktu,
+        SELECT lokace, max_kontaktu, cron_enabled,
                vyraz1, vyraz2, vyraz3, vyraz4, vyraz5,
                vyraz6, vyraz7, vyraz8, vyraz9, vyraz10
         FROM scraper_config
@@ -462,8 +464,33 @@ pub async fn nacti_config(pool: &PgPool) -> Result<Option<ScraperConfig>, sqlx::
             lokace: config.lokace,
             vyrazy,
             max_kontaktu: config.max_kontaktu,
+            cron_enabled: config.cron_enabled,
         }
     }))
+}
+
+/// Jestli má denní cron spouštět actor. Ptá se DB těsně před během, ne při
+/// startu — změna checkboxu v nastavení tak platí hned, bez restartu.
+/// Bez řádku konfigurace nebo při chybě DB se neběží (actor by stejně
+/// bez konfigurace nic neudělal).
+pub async fn cron_povolen(pool: &PgPool) -> bool {
+    match sqlx::query_scalar!(
+        "SELECT cron_enabled FROM scraper_config WHERE id = $1",
+        CONFIG_ID
+    )
+    .fetch_optional(pool)
+    .await
+    {
+        Ok(Some(povolen)) => povolen,
+        Ok(None) => {
+            eprintln!("scraper_config s id = {} neexistuje, cron se nespouští", CONFIG_ID);
+            false
+        }
+        Err(e) => {
+            eprintln!("DB error (cron_enabled), cron se nespouští: {:?}", e);
+            false
+        }
+    }
 }
 
 /// Delší lokaci nemá smysl posílat na Nominatim.
@@ -498,6 +525,7 @@ fn render_nastaveni(
     lokace: &str,
     vyrazy: &[String],
     max_kontaktu: i32,
+    cron_enabled: bool,
     ulozeno: bool,
     chyba: &str,
 ) -> Html<String> {
@@ -515,6 +543,7 @@ fn render_nastaveni(
         max_kontaktu => &max_kontaktu,
         min_kontaktu_limit => &MIN_KONTAKTU,
         max_kontaktu_limit => &MAX_KONTAKTU,
+        cron_enabled => &cron_enabled,
         ulozeno => &ulozeno,
         chyba => &chyba
     };
@@ -545,9 +574,9 @@ pub async fn nastaveni_page(
     };
 
     // Bez řádku v DB se stránka vykreslí prázdná, ať se dá aspoň zobrazit.
-    let (lokace, vyrazy, max_kontaktu) = match config {
-        Some(c) => (c.lokace, c.vyrazy, c.max_kontaktu),
-        None => (String::new(), Vec::new(), 30),
+    let (lokace, vyrazy, max_kontaktu, cron_enabled) = match config {
+        Some(c) => (c.lokace, c.vyrazy, c.max_kontaktu, c.cron_enabled),
+        None => (String::new(), Vec::new(), 30, true),
     };
 
     render_nastaveni(
@@ -555,6 +584,7 @@ pub async fn nastaveni_page(
         &lokace,
         &vyrazy,
         max_kontaktu,
+        cron_enabled,
         params.contains_key("ulozeno"),
         params.get("chyba").map(String::as_str).unwrap_or_default(),
     )
@@ -569,11 +599,14 @@ pub async fn nastaveni_save(
     let mut vyrazy: Vec<String> = Vec::new();
     // None = pole chybí nebo není číslo; rozsah se kontroluje níž.
     let mut max_kontaktu: Option<i32> = None;
+    // Nezaškrtnutý checkbox prohlížeč vůbec nepošle, proto výchozí false.
+    let mut cron_enabled = false;
 
     for (klic, hodnota) in pole {
         match klic.as_str() {
             "lokace" => lokace = hodnota.trim().to_string(),
             "max_kontaktu" => max_kontaktu = hodnota.trim().parse().ok(),
+            "cron_enabled" => cron_enabled = true,
             "vyraz" => {
                 let vyraz = hodnota.trim().to_string();
                 if !vyraz.is_empty() && vyrazy.len() < MAX_VYRAZU {
@@ -590,7 +623,7 @@ pub async fn nastaveni_save(
         Some(n) if (MIN_KONTAKTU..=MAX_KONTAKTU).contains(&n) => n,
         jiny => {
             let zobraz = jiny.unwrap_or(30);
-            return render_nastaveni(&state, &lokace, &vyrazy, zobraz, false, "pocet").into_response();
+            return render_nastaveni(&state, &lokace, &vyrazy, zobraz, cron_enabled, false, "pocet").into_response();
         }
     };
 
@@ -598,18 +631,18 @@ pub async fn nastaveni_save(
     // Při neúspěchu se stránka vykreslí rovnou (ne redirect), aby uživatel nepřišel o rozepsané hodnoty.
     if !lokace.is_empty() {
         if lokace.chars().count() > MAX_DELKA_LOKACE {
-            return render_nastaveni(&state, &lokace, &vyrazy, max_kontaktu, false, "lokace").into_response();
+            return render_nastaveni(&state, &lokace, &vyrazy, max_kontaktu, cron_enabled, false, "lokace").into_response();
         }
 
         match overit_lokaci(&state, &lokace).await {
             Ok(true) => {}
             Ok(false) => {
                 println!("Lokace '{}' nebyla na Nominatimu nalezena", lokace);
-                return render_nastaveni(&state, &lokace, &vyrazy, max_kontaktu, false, "lokace").into_response();
+                return render_nastaveni(&state, &lokace, &vyrazy, max_kontaktu, cron_enabled, false, "lokace").into_response();
             }
             Err(e) => {
                 eprintln!("Ověření lokace '{}' selhalo: {:?}", lokace, e);
-                return render_nastaveni(&state, &lokace, &vyrazy, max_kontaktu, false, "overeni").into_response();
+                return render_nastaveni(&state, &lokace, &vyrazy, max_kontaktu, cron_enabled, false, "overeni").into_response();
             }
         }
     }
@@ -632,6 +665,7 @@ pub async fn nastaveni_save(
             vyraz9  = $11,
             vyraz10 = $12,
             max_kontaktu = $13,
+            cron_enabled = $14,
             updated_at = NOW()
         WHERE id = $1
         "#,
@@ -647,7 +681,8 @@ pub async fn nastaveni_save(
         vyraz(7),
         vyraz(8),
         vyraz(9),
-        max_kontaktu
+        max_kontaktu,
+        cron_enabled
     )
     .execute(&state.pool)
     .await;
@@ -776,6 +811,10 @@ pub fn run_cron_job(state: AppState) -> Result<Job> {
     let job: Job = Job::new_async_tz("0 0 6 * * *", Prague,move |_uuid, _l| {
         let job_state = state.clone();
         Box::pin(async move {
+            if !cron_povolen(&job_state.pool).await {
+                println!("Cron je v nastavení vypnutý, actor se nespouští");
+                return;
+            }
             let _ = run_actor(&job_state).await;
         })
     })?;
@@ -786,7 +825,7 @@ pub async fn run_actor(state: &AppState) -> Result<(), Box<dyn Error>> {
 
     println!("Spuštění cron jobu, načtení výrazů a lokace");
 
-    let ScraperConfig { lokace, vyrazy, max_kontaktu } = match nacti_config(&state.pool).await {
+    let ScraperConfig { lokace, vyrazy, max_kontaktu, .. } = match nacti_config(&state.pool).await {
         Ok(Some(config)) => config,
         Ok(None) => {
             eprintln!("scraper_config s id = {} neexistuje, actor se nespouští", CONFIG_ID);
@@ -1144,6 +1183,8 @@ pub async fn provozovna_detail(
 fn render_detail(state: &AppState, provozovna: Option<&Provozovna>, filtry: &Filtry) -> AxumResponse {
     let context = context! {
         p => &provozovna,
+        mapa_url => &provozovna.map(|p| mapa_url(state, p)).unwrap_or_default(),
+        max_emailu => &MAX_EMAILU,
         // Odkaz zpět do výpisu i cíl přesměrování po akcích na této stránce.
         zpet => &filtry.url(),
         detail_url => &provozovna.map(|p| filtry.url_detailu(p.id)).unwrap_or_default(),
@@ -1160,6 +1201,33 @@ fn render_detail(state: &AppState, provozovna: Option<&Provozovna>, filtry: &Fil
         Err(err) => {
             eprintln!("Tera error: {:?}", err);
             (StatusCode::INTERNAL_SERVER_ERROR, Html(format!("Chyba: {}", err))).into_response()
+        }
+    }
+}
+
+/// Adresa pro `<iframe>` s Google mapou na detailu.
+///
+/// S klíčem Embed API (`GOOGLE_MAPS_EMBED_KEY`) se mapa vkládá přesně podle
+/// `place_id`. Bez klíče Google `place_id` v embedu neumí (ověřeno — vykreslí
+/// prázdnou mapu světa), takže se hledá podle názvu a adresy; to je pro
+/// zobrazení jedné provozovny dostatečné. Skládá se tady, ne v šabloně —
+/// Tera 2 nemá `urlencode`.
+fn mapa_url(state: &AppState, p: &Provozovna) -> String {
+    match &state.config.google_maps_embed_key {
+        Some(klic) => format!(
+            "https://www.google.com/maps/embed/v1/place?key={}&q=place_id:{}&language=cs",
+            enkoduj(klic),
+            enkoduj(&p.place_id)
+        ),
+        None => {
+            let dotaz = match p.adresa.as_deref().filter(|a| !a.is_empty()) {
+                Some(adresa) => format!("{}, {}", p.nazev, adresa),
+                None => p.nazev.clone(),
+            };
+            format!(
+                "https://maps.google.com/maps?q={}&z=15&hl=cs&output=embed",
+                enkoduj(&dotaz)
+            )
         }
     }
 }
@@ -1221,4 +1289,90 @@ pub async fn set_poznamka(
             Redirect::to(&zpet).into_response()
         }
     }
+}
+
+/// Horní hranice počtu e-mailů u jedné provozovny — víc je skoro jistě omyl.
+const MAX_EMAILU: usize = 20;
+
+/// POST /kontakt — uloží telefon a e-maily z detailu provozovny.
+///
+/// `email` chodí opakovaně (jedno pole na adresu), proto `Vec<(String, String)>`
+/// a ne struktura. Prázdná pole se zahodí — smazání e-mailu = vymazat input.
+/// E-maily se nahrazují celé (smazat + vložit), aby to byla jedna operace
+/// bez porovnávání starého a nového seznamu.
+pub async fn set_kontakt(
+    State(state): State<AppState>,
+    Form(pole): Form<Vec<(String, String)>>,
+) -> impl IntoResponse {
+    let mut id: Option<i32> = None;
+    let mut zpet: Option<String> = None;
+    let mut telefon = String::new();
+    let mut emaily: Vec<String> = Vec::new();
+
+    for (klic, hodnota) in pole {
+        match klic.as_str() {
+            "id" => id = hodnota.trim().parse().ok(),
+            "zpet" => zpet = Some(hodnota),
+            "telefon" => telefon = hodnota.trim().to_string(),
+            "email" => {
+                let email = hodnota.trim().to_lowercase();
+                // Jen hrubá kontrola tvaru — ať se neuloží zjevný nesmysl,
+                // ale ani neodmítne neobvyklá, přesto platná adresa.
+                let vypada_jako_email = email.contains('@')
+                    && !email.starts_with('@')
+                    && !email.ends_with('@')
+                    && !email.contains(char::is_whitespace);
+                if vypada_jako_email && !emaily.contains(&email) && emaily.len() < MAX_EMAILU {
+                    emaily.push(email);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let zpet = bezpecny_navrat(zpet.as_deref());
+
+    let Some(id) = id else {
+        return Redirect::to(&zpet).into_response();
+    };
+
+    // Prázdný telefon = NULL, stejně jako u záznamů z Apify bez telefonu.
+    let telefon = Some(telefon).filter(|t| !t.is_empty());
+
+    // updated_at se schválně nemění — řadí se podle něj výpis a záznam
+    // by kvůli opravě kontaktu přeskočil nahoru.
+    let vysledek: Result<(), sqlx::Error> = async {
+        let mut tx = state.pool.begin().await?;
+
+        sqlx::query!(
+            "UPDATE provozovny SET telefon = $2 WHERE id = $1",
+            id,
+            telefon
+        )
+        .execute(&mut *tx)
+        .await?;
+
+        sqlx::query!("DELETE FROM provozovny_emaily WHERE provozovna_id = $1", id)
+            .execute(&mut *tx)
+            .await?;
+
+        for email in &emaily {
+            sqlx::query!(
+                "INSERT INTO provozovny_emaily (provozovna_id, email) VALUES ($1, $2)",
+                id,
+                email
+            )
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await
+    }
+    .await;
+
+    if let Err(e) = vysledek {
+        eprintln!("DB chyba (kontakt, id = {}): {:?}", id, e);
+    }
+
+    Redirect::to(&zpet).into_response()
 }

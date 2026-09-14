@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT lokace, max_kontaktu,\n               vyraz1, vyraz2, vyraz3, vyraz4, vyraz5,\n               vyraz6, vyraz7, vyraz8, vyraz9, vyraz10\n        FROM scraper_config\n        WHERE id = $1\n        ",
+  "query": "\n        SELECT lokace, max_kontaktu, cron_enabled,\n               vyraz1, vyraz2, vyraz3, vyraz4, vyraz5,\n               vyraz6, vyraz7, vyraz8, vyraz9, vyraz10\n        FROM scraper_config\n        WHERE id = $1\n        ",
   "describe": {
     "columns": [
       {
@@ -15,51 +15,56 @@
       },
       {
         "ordinal": 2,
+        "name": "cron_enabled",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 3,
         "name": "vyraz1",
         "type_info": "Text"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "vyraz2",
         "type_info": "Text"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "vyraz3",
         "type_info": "Text"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "vyraz4",
         "type_info": "Text"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "vyraz5",
         "type_info": "Text"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "vyraz6",
         "type_info": "Text"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "vyraz7",
         "type_info": "Text"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "vyraz8",
         "type_info": "Text"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "vyraz9",
         "type_info": "Text"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "vyraz10",
         "type_info": "Text"
       }
@@ -70,6 +75,7 @@
       ]
     },
     "nullable": [
+      false,
       false,
       false,
       true,
@@ -84,5 +90,5 @@
       true
     ]
   },
-  "hash": "de592ccd700e0c8584e8995c1d314f81bd2c6cb486e48d4e108ab20f3ace30a9"
+  "hash": "fd450b1a9d18d0d450266e4e24e14afc5802031cb5ad5a0bc47e198a1664d3af"
 }

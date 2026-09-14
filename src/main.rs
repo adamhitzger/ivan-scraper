@@ -5,7 +5,7 @@ use crate::{
     config::Config, routes::{
         apify_webhook, auth_middleware, delete_record, download_file, health, html_page, login,
         login_page, nastaveni_page, nastaveni_save, provozovna_detail, run_cron_job,
-        set_kontaktovane, set_poznamka, set_smluvene,
+        set_kontakt, set_kontaktovane, set_poznamka, set_smluvene,
     }
 };
 use anyhow::Result;
@@ -82,6 +82,7 @@ async fn main() -> Result<()> {
     .route("/kontaktovane", post(set_kontaktovane))
     .route("/smluvene", post(set_smluvene))
     .route("/poznamka", post(set_poznamka))
+    .route("/kontakt", post(set_kontakt))
     .route("/nastaveni", get(nastaveni_page))
     .route("/nastaveni", post(nastaveni_save))
     .route_layer(middleware::from_fn_with_state(state.clone(), auth_middleware));

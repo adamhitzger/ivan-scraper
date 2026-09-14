@@ -8,6 +8,10 @@ pub struct Config {
     pub apify_token: String,
     pub apify_actor_id: String,
     pub database_url: String,
+    /// Klíč Google Maps Embed API. Nepovinný: s ním se mapa na detailu
+    /// provozovny vkládá přesně podle place_id, bez něj se hledá podle
+    /// názvu a adresy (viz `mapa_url` v routes.rs).
+    pub google_maps_embed_key: Option<String>,
 }
 
 impl Config {
@@ -20,7 +24,10 @@ impl Config {
                 .context("PORT musí být číslo")?,
             apify_token: env::var("APIFY_API_TOKEN").context("APIFY_API_TOKEN chybí")?,
             apify_actor_id: env::var("GOOGLE_MAPS_SCRAPER_TOKEN").context("GOOGLE_MAPS_SCRAPER_TOKEN chybí")?,
-            database_url: env::var("DATABASE_URL").context("DATABASE_URL chybí")?
+            database_url: env::var("DATABASE_URL").context("DATABASE_URL chybí")?,
+            google_maps_embed_key: env::var("GOOGLE_MAPS_EMBED_KEY")
+                .ok()
+                .filter(|k| !k.trim().is_empty()),
         })
     }
     
