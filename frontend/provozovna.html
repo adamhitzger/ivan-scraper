@@ -259,6 +259,11 @@
                         </div>
 
                         <div class="flex gap-4 py-2.5">
+                            <dt class="w-24 shrink-0 text-muted">Země</dt>
+                            <dd class="min-w-0 flex-1">{% if p.country_code %}{{ p.country_code }}{% else %}<span class="text-faint">—</span>{% endif %}</dd>
+                        </div>
+
+                        <div class="flex gap-4 py-2.5">
                             <dt class="w-24 shrink-0 text-muted">Přidáno</dt>
                             <dd class="min-w-0 flex-1 text-muted">
                                 {% if p.created_at %}{{ p.created_at | truncate(length=10, end="") }}{% else %}<span class="text-faint">—</span>{% endif %}

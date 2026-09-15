@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,\n            p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.created_at, p.updated_at,\n            array_remove(array_agg(e.email), NULL) AS emaily,\n            p.is_contacted, p.is_closed, p.poznamka\n        FROM provozovny p\n        LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id\n        WHERE p.id = $1\n        GROUP BY p.id\n        ",
+  "query": "\n    -- Sloupce se vypisují ručně: query_as! je mapuje na pole struktury podle pořadí,\n    -- takže `p.*` by při jiném fyzickém rozložení tabulky posunulo hodnoty a dekódování\n    -- by spadlo panikou uvnitř bytes místo čitelné chyby.\n    SELECT\n        p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,\n        p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.country_code, p.created_at, p.updated_at,\n        array_remove(array_agg(e.email), NULL) AS emaily,\n        p.is_contacted, p.is_closed, p.poznamka\n    FROM provozovny p\n    LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id\n    WHERE ($3 = '' OR p.mesto ILIKE $3)\n      AND ($4 = ''\n           OR ($4 = 'kontaktovane' AND p.is_contacted)\n           OR ($4 = 'smluvene' AND p.is_closed))\n    GROUP BY p.id\n    ORDER BY p.updated_at DESC\n    LIMIT $1 OFFSET $2\n    ",
   "describe": {
     "columns": [
       {
@@ -65,38 +65,46 @@
       },
       {
         "ordinal": 12,
+        "name": "country_code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
         "name": "created_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "updated_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "emaily",
         "type_info": "TextArray"
       },
       {
-        "ordinal": 15,
+        "ordinal": 16,
         "name": "is_contacted",
         "type_info": "Bool"
       },
       {
-        "ordinal": 16,
+        "ordinal": 17,
         "name": "is_closed",
         "type_info": "Bool"
       },
       {
-        "ordinal": 17,
+        "ordinal": 18,
         "name": "poznamka",
         "type_info": "Text"
       }
     ],
     "parameters": {
       "Left": [
-        "Int4"
+        "Int8",
+        "Int8",
+        "Text",
+        "Text"
       ]
     },
     "nullable": [
@@ -114,11 +122,12 @@
       true,
       true,
       true,
+      true,
       null,
       false,
       false,
       false
     ]
   },
-  "hash": "8357e074fff648aa65d38c65e673736defcad3b6012df579266a2274e59ec5f7"
+  "hash": "b3aefaec68c445495b123e7d52f0c220a56fa743b75500fad9abc8ee55e72459"
 }

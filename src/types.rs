@@ -31,6 +31,9 @@ pub struct Place {
     pub reviews_count: Option<u32>,
     pub place_id: String,
     pub url: Option<String>,
+    /// `countryCode` z Apify (rename_all = camelCase to mapuje samo). Option,
+    /// protože chybějící pole u jediného místa by jinak shodilo celý dataset.
+    pub country_code: Option<String>,
 }
 
 #[derive(serde::Serialize, Debug)]
@@ -47,6 +50,8 @@ pub struct Provozovna {
     pub hodnoceni: Option<f32>,
     pub pocet_recenzi: Option<i32>,
     pub url: Option<String>,
+    /// Kód země z Apify, např. "PL". U záznamů před přidáním sloupce NULL.
+    pub country_code: Option<String>,
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
     pub emaily: Option<Vec<String>>,

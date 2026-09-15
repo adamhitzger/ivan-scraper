@@ -199,7 +199,7 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
     -- by spadlo panikou uvnitř bytes místo čitelné chyby.
     SELECT
         p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,
-        p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.created_at, p.updated_at,
+        p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.country_code, p.created_at, p.updated_at,
         array_remove(array_agg(e.email), NULL) AS emaily,
         p.is_contacted, p.is_closed, p.poznamka
     FROM provozovny p
@@ -740,7 +740,7 @@ pub async fn fetch_dataset(state: &AppState, dataset_id: &str) -> Result<Vec<Pla
 
     let request = state.http.request(Method::GET, url)
         .headers(headers(state)?)
-        .query(&[("fields", "title,phone,phoneUnformatted,website,address,city,postalCode,emails,totalScore,reviewsCount,placeId,url"), ("clean", "true"), ("format", "json")]);
+        .query(&[("fields", "title,phone,phoneUnformatted,website,address,city,postalCode,emails,totalScore,reviewsCount,placeId,url,countryCode"), ("clean", "true"), ("format", "json")]);
 
     let response: Response = request.send().await?;
     let data: Vec<Place> = response.json().await?;
@@ -768,14 +768,19 @@ for place in places {
     // jen pro čerstvě vložený řádek — u UPDATE větve je xmax id transakce.
     let row = sqlx::query!(
         r#"
-        INSERT INTO provozovny (place_id, nazev, telefon, web, adresa, mesto, psc, hodnoceni)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        ON CONFLICT (place_id) DO UPDATE SET updated_at = NOW()
+        INSERT INTO provozovny (place_id, nazev, telefon, web, adresa, mesto, psc, hodnoceni, country_code)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        -- country_code se u známých záznamů doplní, pokud ho ještě nemají
+        -- (sloupec přibyl později); jinou hodnotou se nepřepisuje.
+        ON CONFLICT (place_id) DO UPDATE
+            SET updated_at = NOW(),
+                country_code = COALESCE(provozovny.country_code, EXCLUDED.country_code)
         RETURNING id, (xmax = 0) AS "vlozeno!"
         "#,
         place.place_id, place.title, place.phone, place.website,
         place.address, place.city, place.postal_code,
        place.total_score.map(|s| s as f32),
+        place.country_code,
     )
     .fetch_one(&mut *tx)
     .await?;
@@ -1153,7 +1158,7 @@ pub async fn provozovna_detail(
         r#"
         SELECT
             p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,
-            p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.created_at, p.updated_at,
+            p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.country_code, p.created_at, p.updated_at,
             array_remove(array_agg(e.email), NULL) AS emaily,
             p.is_contacted, p.is_closed, p.poznamka
         FROM provozovny p
