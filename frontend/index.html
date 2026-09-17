@@ -40,7 +40,7 @@
 </head>
 
 <body class="bg-canvas font-sans text-ink antialiased"
-      x-data="{ menu: false, exportOtevren: false }"
+      x-data="stranka({{ vybrano }})"
       @keydown.escape.window="menu = false; exportOtevren = false">
 
     <!-- ───────────── Sidebar ───────────── -->
@@ -77,7 +77,6 @@
             <button type="button" @click="menu = true" class="text-lg" aria-label="Otevřít menu">☰</button>
             <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-brand text-sm font-bold text-white">✓</span>
             <span class="text-[15px] font-semibold">LeadMgr</span>
-            <span class="ml-auto flex h-8 w-8 items-center justify-center rounded-full bg-brand text-xs font-bold text-white">A</span>
         </header>
 
         <!-- TopBar — desktop -->
@@ -143,7 +142,20 @@
                  druhý filtr a resetují stránkování. -->
             <div class="mb-4 space-y-2.5 rounded-xl border border-line bg-white p-3 lg:p-2.5">
 
+                {% if zeme_seznam | length > 0 %}
+                <!-- Země zužuje seznam měst pod ní; záznamy bez country_code jsou jen pod „Vše" -->
                 <div class="no-scrollbar flex items-center gap-2 overflow-x-auto">
+                    <span class="shrink-0 pr-1 text-[10px] font-semibold uppercase tracking-wider text-faint">Země</span>
+                    {% for z in zeme_pilulky %}
+                        <a href="{{ z.url }}"
+                           class="shrink-0 rounded-full px-3.5 py-1.5 text-[13px] transition {% if z.aktivni %}bg-brand font-semibold text-white{% else %}border border-line2 bg-canvas text-muted hover:border-brand hover:text-ink{% endif %}">
+                            {{ z.popisek }}
+                        </a>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div class="no-scrollbar flex items-center gap-2 overflow-x-auto {% if zeme_seznam | length > 0 %}border-t border-line pt-2.5{% endif %}">
                     <span class="shrink-0 pr-1 text-[10px] font-semibold uppercase tracking-wider text-faint">Město</span>
                     {% for m in mesta_pilulky %}
                         <a href="{{ m.url }}"
@@ -164,13 +176,51 @@
                 </div>
             </div>
 
+            <!-- ───────────── Lišta hromadného výběru ─────────────
+                 Výběr drží server v session (cookie `vyber`), takže přežije stránkování
+                 i filtry. Počet přichází z /vyber jako JSON, stránka se nepřekresluje. -->
+            <div x-show="vybrano > 0" x-cloak x-transition.opacity.duration.150ms
+                 class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-brand/40 bg-brand-tint px-3.5 py-2.5">
+                <p class="text-[13px] text-brand-dark">
+                    <span class="font-semibold">Vybráno <span x-text="vybrano"></span></span>
+                    <span class="text-muted"> napříč stránkami</span>
+                </p>
+
+                <div class="ml-auto flex flex-wrap items-center gap-2">
+                    <button type="button" @click="jenVybrane = true; exportOtevren = true"
+                            class="flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-semibold text-white transition hover:bg-brand-dark">
+                        <span class="font-normal">↑</span> Exportovat vybrané
+                    </button>
+
+                    <form method="POST" action="/hromadne/smazat"
+                          @submit="if (!confirm('Opravdu smazat ' + vybrano + ' vybraných provozoven? Akce je nevratná.')) $event.preventDefault()">
+                        <input type="hidden" name="zpet" value="{{ zpet }}" />
+                        <button type="submit"
+                                class="flex h-8 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-3 text-xs font-semibold text-red-600 transition hover:border-red-400 hover:bg-red-50">
+                            Smazat vybrané
+                        </button>
+                    </form>
+
+                    <button type="button" @click="zmenVyber('zrusit', []); $dispatch('vyber-vse', { zap: false })"
+                            class="h-8 rounded-lg px-3 text-xs font-medium text-muted transition hover:bg-white hover:text-ink">
+                        Zrušit výběr
+                    </button>
+                </div>
+            </div>
+
             <!-- ───────────── Tabulka (desktop) ───────────── -->
             <div class="hidden overflow-hidden rounded-xl border border-line bg-white lg:block">
                 <div class="overflow-x-auto">
                     <table class="w-full min-w-[1100px] text-left">
                         <thead>
                             <tr class="border-b border-line bg-canvas text-[10px] font-medium uppercase tracking-wider text-muted">
-                                <th class="py-3 pl-5 pr-4 font-medium">Název provozovny</th>
+                                <th class="w-10 py-3 pl-4 pr-1">
+                                    <!-- Vybere/odebere jen řádky na této stránce; ostatní stránky ve výběru zůstávají. -->
+                                    <input type="checkbox" aria-label="Vybrat vše na stránce"
+                                           class="h-4 w-4 cursor-pointer rounded border-line2 text-brand focus:ring-brand/30"
+                                           :checked="vsePoznaceno" @change="vseNaStrance($event.target.checked)" />
+                                </th>
+                                <th class="py-3 pl-1 pr-4 font-medium">Název provozovny</th>
                                 <th class="py-3 pr-4 font-medium">Město</th>
                                 <th class="py-3 pr-4 font-medium">Telefon</th>
                                 <th class="py-3 pr-4 font-medium">Emaily</th>
@@ -182,8 +232,16 @@
                         </thead>
                         <tbody class="divide-y divide-line">
                         {% for p in data %}
-                            <tr class="text-[13px] transition even:bg-canvas hover:bg-brand-tint/40">
-                                <td class="max-w-[240px] py-3 pl-5 pr-4 font-medium">
+                            <tr x-data="radek({{ p.id }}, {% if p.id in vybrane %}true{% else %}false{% endif %})"
+                                @vyber-vse.window="v = $event.detail.zap"
+                                :class="v && '!bg-brand-tint/50'"
+                                class="text-[13px] transition even:bg-canvas hover:bg-brand-tint/40">
+                                <td class="py-3 pl-4 pr-1">
+                                    <input type="checkbox" aria-label="Vybrat {{ p.nazev }}"
+                                           class="h-4 w-4 cursor-pointer rounded border-line2 text-brand focus:ring-brand/30"
+                                           x-model="v" @change="zmenVyber(v ? 'pridat' : 'odebrat', [id])" />
+                                </td>
+                                <td class="max-w-[240px] py-3 pl-1 pr-4 font-medium">
                                     <a href="/provozovna/{{ p.id }}?page={{ page }}{{ qs }}" class="hover:text-brand-dark hover:underline">{{ p.nazev }}</a>
                                 </td>
                                 <td class="py-3 pr-4">
@@ -277,7 +335,7 @@
                             </tr>
                         {% else %}
                             <tr>
-                                <td colspan="8" class="px-5 py-16 text-center text-sm text-faint">Žádné provozovny neodpovídají filtru.</td>
+                                <td colspan="9" class="px-5 py-16 text-center text-sm text-faint">Žádné provozovny neodpovídají filtru.</td>
                             </tr>
                         {% endfor %}
                         </tbody>
@@ -288,8 +346,14 @@
             <!-- ───────────── Karty (mobil) ───────────── -->
             <div class="flex flex-col gap-3 lg:hidden">
             {% for p in data %}
-                <article class="rounded-xl border border-line bg-white p-3.5">
+                <article x-data="radek({{ p.id }}, {% if p.id in vybrane %}true{% else %}false{% endif %})"
+                         @vyber-vse.window="v = $event.detail.zap"
+                         :class="v ? 'border-brand/50 bg-brand-tint/40' : 'border-line bg-white'"
+                         class="rounded-xl border p-3.5 transition">
                     <div class="flex items-start gap-2.5">
+                        <input type="checkbox" aria-label="Vybrat {{ p.nazev }}"
+                               class="mt-0.5 h-4 w-4 shrink-0 cursor-pointer rounded border-line2 text-brand focus:ring-brand/30"
+                               x-model="v" @change="zmenVyber(v ? 'pridat' : 'odebrat', [id])" />
                         <h2 class="flex-1 text-sm font-semibold leading-snug">
                             <a href="/provozovna/{{ p.id }}?page={{ page }}{{ qs }}">{{ p.nazev }}</a>
                         </h2>
@@ -435,10 +499,11 @@
          class="fixed inset-0 z-50 overflow-y-auto bg-[#0a110e]/50 p-4 lg:p-8"
          @click.self="exportOtevren = false">
 
-        <form method="POST" action="/download" x-data="{ format: 'csv' }"
+        <form method="POST" action="/download" x-data="{ format: 'excel' }"
               class="mx-auto w-full max-w-[480px] overflow-hidden rounded-2xl bg-white shadow-[0_8px_40px_rgba(10,17,14,0.25)]">
 
             <input type="hidden" name="format" :value="format" />
+            <input type="hidden" name="jen_vybrane" :value="jenVybrane ? '1' : '0'" />
 
             <!-- Hlavička -->
             <div class="flex items-start gap-3 bg-brand-tint px-6 py-4">
@@ -467,6 +532,16 @@
                 </div>
             </section>
 
+            <!-- Jen hromadný výběr — server pak ignoruje město/stav/limit, řazení nechá -->
+            <section x-show="vybrano > 0" x-cloak class="border-t border-line px-6 py-4">
+                <label class="flex cursor-pointer items-center gap-2.5">
+                    <input type="checkbox" x-model="jenVybrane"
+                           class="h-4 w-4 rounded border-line2 text-brand focus:ring-brand/30" />
+                    <span class="text-[13px]">Jen vybrané záznamy (<span x-text="vybrano"></span>)</span>
+                </label>
+                <p x-show="jenVybrane" class="mt-1.5 pl-[26px] text-[11px] text-muted">Exportuje se přesně výběr napříč stránkami; filtry a počet níže se nepoužijí.</p>
+            </section>
+
             <!-- Řazení -->
             <section class="border-t border-line px-6 py-4">
                 <label for="razeni" class="text-[11px] font-medium text-muted">Seřadit záznamy podle</label>
@@ -480,7 +555,7 @@
             </section>
 
             <!-- Počet záznamů -->
-            <section class="border-t border-line px-6 py-4">
+            <section x-show="!jenVybrane" class="border-t border-line px-6 py-4">
                 <label for="limit" class="text-[11px] font-medium text-muted">Počet nejnovějších záznamů</label>
                 <div class="mt-2 flex items-center gap-3">
                     <input type="number" id="limit" name="limit" value="100" min="1" max="10000" step="1"
@@ -490,7 +565,20 @@
             </section>
 
             <!-- Filtry — přednastavené podle toho, co je zrovna vidět ve výpisu -->
-            <section class="border-t border-line px-6 py-4">
+            {% if zeme_seznam | length > 0 %}
+            <section x-show="!jenVybrane" class="border-t border-line px-6 py-4">
+                <label for="zeme" class="text-[11px] font-medium text-muted">Filtrovat podle země</label>
+                <select id="zeme" name="zeme"
+                        class="mt-2 h-9 w-full rounded-lg border border-line2 bg-canvas px-3 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-brand/25">
+                    <option value="">Všechny země</option>
+                    {% for z in zeme_seznam %}
+                        <option value="{{ z }}"{% if z == zeme %} selected{% endif %}>{{ z }}</option>
+                    {% endfor %}
+                </select>
+            </section>
+            {% endif %}
+
+            <section x-show="!jenVybrane" class="border-t border-line px-6 py-4">
                 <label for="mesto" class="text-[11px] font-medium text-muted">Filtrovat podle města</label>
                 <select id="mesto" name="mesto"
                         class="mt-2 h-9 w-full rounded-lg border border-line2 bg-canvas px-3 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-brand/25">
@@ -501,7 +589,7 @@
                 </select>
             </section>
 
-            <section class="border-t border-line px-6 py-4">
+            <section x-show="!jenVybrane" class="border-t border-line px-6 py-4">
                 <label for="stav" class="text-[11px] font-medium text-muted">Filtrovat podle stavu</label>
                 <select id="stav" name="stav"
                         class="mt-2 h-9 w-full rounded-lg border border-line2 bg-canvas px-3 text-[13px] text-ink focus:outline-none focus:ring-2 focus:ring-brand/25">
@@ -529,6 +617,54 @@
         // Menu „tři tečky“ v tabulce. Pozice se počítá z tlačítka a nastavuje jako `fixed`,
         // protože absolutně pozicované menu by ořízl overflow-x-auto kolem tabulky.
         document.addEventListener('alpine:init', function () {
+            // Kořenový stav stránky + hromadný výběr. Počet vybraných chodí ze serveru
+            // (session), id na aktuální stránce renderuje Tera do `naStrance`.
+            Alpine.data('stranka', function (vybrano) {
+                return {
+                    menu: false,
+                    exportOtevren: false,
+                    jenVybrane: false,
+                    vybrano: vybrano,
+                    naStrance: [{% for p in data %}{{ p.id }}{% if not loop.last %}, {% endif %}{% endfor %}],
+                    vsePoznaceno: false,
+                    init: function () {
+                        // Hlavičkový checkbox svítí, když už je celá stránka ve výběru.
+                        var uz = [{% for p in data %}{% if p.id in vybrane %}{{ p.id }},{% endif %}{% endfor %}];
+                        this.vsePoznaceno = this.naStrance.length > 0 && uz.length === this.naStrance.length;
+                    },
+                    async zmenVyber(akce, ids) {
+                        if (akce === 'odebrat') this.vsePoznaceno = false;
+                        var body = new URLSearchParams();
+                        body.set('akce', akce);
+                        ids.forEach(function (id) { body.append('id', id); });
+                        try {
+                            var r = await fetch('/vyber', {
+                                method: 'POST',
+                                headers: { 'Accept': 'application/json' },
+                                body: body
+                            });
+                            if (!r.ok) throw new Error(r.status);
+                            var j = await r.json();
+                            this.vybrano = j.pocet;
+                            if (akce === 'zrusit') { this.vsePoznaceno = false; this.jenVybrane = false; }
+                        } catch (e) {
+                            // Nejspíš vypršelé přihlášení — reload ukáže login.
+                            location.reload();
+                        }
+                    },
+                    vseNaStrance: function (zap) {
+                        this.vsePoznaceno = zap;
+                        this.$dispatch('vyber-vse', { zap: zap });
+                        this.zmenVyber(zap ? 'pridat' : 'odebrat', this.naStrance);
+                    }
+                };
+            });
+
+            // Jeden řádek tabulky / karta: `v` = je ve výběru.
+            Alpine.data('radek', function (id, vybrano) {
+                return { id: id, v: vybrano };
+            });
+
             Alpine.data('menuStavu', function () {
                 return {
                     open: false,

@@ -30,3 +30,8 @@ uuid = { version = "1", features = ["v4"] }
 quick-xml = { version = "0.37", features = ["serialize"] }
 rust_xlsxwriter = "0.96"
 ammonia = "4"
+# Řada 0.13 je poslední pro axum 0.7 (0.14+ staví na axum-core 0.5 = axum 0.8).
+# Pozor: sqlx-store je číslovaný o jedničku výš než tower-sessions (0.14 <-> core 0.13).
+tower-sessions = "0.13"
+tower-sessions-core = { version = "0.13", features = ["deletion-task"] }
+tower-sessions-sqlx-store = { version = "0.14", features = ["postgres"] }

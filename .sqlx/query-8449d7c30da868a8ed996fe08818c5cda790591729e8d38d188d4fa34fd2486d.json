@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n    -- Sloupce se vypisují ručně: query_as! je mapuje na pole struktury podle pořadí,\n    -- takže `p.*` by při jiném fyzickém rozložení tabulky posunulo hodnoty a dekódování\n    -- by spadlo panikou uvnitř bytes místo čitelné chyby.\n    SELECT\n        p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,\n        p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.country_code, p.created_at, p.updated_at,\n        array_remove(array_agg(e.email), NULL) AS emaily,\n        p.is_contacted, p.is_closed, p.poznamka\n    FROM provozovny p\n    LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id\n    WHERE ($3 = '' OR p.mesto ILIKE $3)\n      AND ($4 = ''\n           OR ($4 = 'kontaktovane' AND p.is_contacted)\n           OR ($4 = 'smluvene' AND p.is_closed))\n    GROUP BY p.id\n    ORDER BY p.updated_at DESC\n    LIMIT $1 OFFSET $2\n    ",
+  "query": "\n    -- Sloupce se vypisují ručně: query_as! je mapuje na pole struktury podle pořadí,\n    -- takže `p.*` by při jiném fyzickém rozložení tabulky posunulo hodnoty a dekódování\n    -- by spadlo panikou uvnitř bytes místo čitelné chyby.\n    -- `AS \"x: _\"` u timestampů: sqlx-store zapíná feature `sqlx/time` a makro by\n    -- jinak sáhlo po time::OffsetDateTime místo chrono podle pole struktury.\n    SELECT\n        p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,\n        p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.country_code,\n        p.created_at AS \"created_at: _\", p.updated_at AS \"updated_at: _\",\n        array_remove(array_agg(e.email), NULL) AS emaily,\n        p.is_contacted, p.is_closed, p.poznamka\n    FROM provozovny p\n    LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id\n    WHERE ($3 = '' OR p.mesto ILIKE $3)\n      AND ($4 = ''\n           OR ($4 = 'kontaktovane' AND p.is_contacted)\n           OR ($4 = 'smluvene' AND p.is_closed))\n      AND ($5 = '' OR p.country_code = $5)\n    GROUP BY p.id\n    ORDER BY p.updated_at DESC\n    LIMIT $1 OFFSET $2\n    ",
   "describe": {
     "columns": [
       {
@@ -70,12 +70,12 @@
       },
       {
         "ordinal": 13,
-        "name": "created_at",
+        "name": "created_at: _",
         "type_info": "Timestamptz"
       },
       {
         "ordinal": 14,
-        "name": "updated_at",
+        "name": "updated_at: _",
         "type_info": "Timestamptz"
       },
       {
@@ -104,6 +104,7 @@
         "Int8",
         "Int8",
         "Text",
+        "Text",
         "Text"
       ]
     },
@@ -129,5 +130,5 @@
       false
     ]
   },
-  "hash": "b3aefaec68c445495b123e7d52f0c220a56fa743b75500fad9abc8ee55e72459"
+  "hash": "8449d7c30da868a8ed996fe08818c5cda790591729e8d38d188d4fa34fd2486d"
 }

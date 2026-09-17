@@ -1,11 +1,11 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT DISTINCT mesto FROM provozovny WHERE mesto IS NOT NULL ORDER BY mesto",
+  "query": "SELECT DISTINCT country_code FROM provozovny WHERE country_code IS NOT NULL ORDER BY country_code",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "mesto",
+        "name": "country_code",
         "type_info": "Text"
       }
     ],
@@ -16,5 +16,5 @@
       true
     ]
   },
-  "hash": "831522d00d211f73de2de866e8ad7990b70c659d59bf581edb7801818dc08b4b"
+  "hash": "bed14a4ddd0c07a1c2f64c3c0bd0d9223d9f586cf5b784eb29f9b10d1ca5e546"
 }

@@ -3,9 +3,9 @@ mod routes;
 mod types; 
 use crate::{
     config::Config, routes::{
-        apify_webhook, auth_middleware, delete_record, download_file, health, html_page, login,
-        login_page, nastaveni_page, nastaveni_save, provozovna_detail, run_cron_job,
-        set_kontakt, set_kontaktovane, set_poznamka, set_smluvene,
+        apify_webhook, auth_middleware, delete_record, download_file, health, hromadne_smazat,
+        html_page, login, login_page, nastaveni_page, nastaveni_save, provozovna_detail,
+        run_cron_job, set_kontakt, set_kontaktovane, set_poznamka, set_smluvene, vyber_zmena,
     }
 };
 use anyhow::Result;
@@ -19,6 +19,8 @@ use lettre::{AsyncSmtpTransport, Tokio1Executor, transport::smtp::authentication
 use dashmap::DashMap;
 use std::time::Instant;
 use std::sync::Arc;
+use tower_sessions::{Expiry, SessionManagerLayer, cookie::time::Duration, session_store::ExpiredDeletion};
+use tower_sessions_sqlx_store::PostgresStore;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -65,6 +67,22 @@ async fn main() -> Result<()> {
     let smtp = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&std::env::var("SMTP_HOST").expect("Chybí SMTP_HOST v .env"))? 
         .credentials(creds)
         .build();
+    // Sessions žijí v PG (schéma `tower_sessions`), takže přežijí restart/redeploy
+    // kontejneru. Tabulku si store založí sám, mimo `sqlx::migrate!`.
+    let session_store = PostgresStore::new(pool.clone());
+    session_store.migrate().await?;
+    tokio::task::spawn(
+        session_store
+            .clone()
+            .continuously_delete_expired(tokio::time::Duration::from_secs(60 * 10)),
+    );
+    // Přihlášení řeší vlastní cookie `session` + DashMap; tohle je jen úložiště
+    // pro stav UI (hromadný výběr), proto jiný název cookie.
+    let session_layer = SessionManagerLayer::new(session_store)
+        .with_name("vyber")
+        .with_secure(true)
+        .with_expiry(Expiry::OnInactivity(Duration::hours(24)));
+
     let sessions = Arc::new(DashMap::new());
     let state: AppState = AppState { config, http, pool, tera, smtp,  sessions};
 
@@ -79,6 +97,8 @@ async fn main() -> Result<()> {
     .route("/provozovna/:id", get(provozovna_detail))
     .route("/delete", post(delete_record))
     .route("/download", post(download_file))
+    .route("/vyber", post(vyber_zmena))
+    .route("/hromadne/smazat", post(hromadne_smazat))
     .route("/kontaktovane", post(set_kontaktovane))
     .route("/smluvene", post(set_smluvene))
     .route("/poznamka", post(set_poznamka))
@@ -93,7 +113,9 @@ async fn main() -> Result<()> {
         .route("/apify/webhook", post(apify_webhook))
         .route("/login", get(login_page))
         .route("/login", post(login))
-        .with_state(state);
+        .with_state(state)
+        // Musí obalit i /login, jinak by handler neměl kam session zapsat.
+        .layer(session_layer);
 
     let listener: TcpListener = TcpListener::bind(&bind_addr).await?;
     

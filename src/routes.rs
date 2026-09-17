@@ -8,7 +8,8 @@ use axum::{
 use tokio_cron_scheduler::Job;
 use chrono_tz::Europe::Prague;
 use tracing::{info, warn,error};
-use std::{collections::{HashMap, HashSet}, error::Error, sync::LazyLock, time::{Duration, Instant}};
+use std::{collections::{BTreeSet, HashMap, HashSet}, error::Error, sync::LazyLock, time::{Duration, Instant}};
+use tower_sessions::Session;
 use serde_json::{
     Value,
     json
@@ -89,7 +90,7 @@ fn enkoduj(hodnota: &str) -> String {
     out
 }
 
-/// Stav výpisu držený v query parametrech (`?page=&search=&stav=`).
+/// Stav výpisu držený v query parametrech (`?page=&search=&stav=&zeme=`).
 /// Posílá se dál každým odkazem i serverovou akcí, aby stránka ani filtry
 /// nezmizely po přechodu na detail nebo po POSTu.
 #[derive(Debug, Clone)]
@@ -99,6 +100,17 @@ pub struct Filtry {
     pub search: String,
     /// `kontaktovane` | `smluvene` | prázdné.
     pub stav: String,
+    /// Kód země z Apify (`PL`, `CZ`, …), prázdné = bez filtru.
+    pub zeme: String,
+}
+
+/// Kód země smí být jen dvě velká ASCII písmena — cokoli jiného se zahodí,
+/// stejně jako u `stav`. Sdílí to výpis i export.
+fn normalizuj_zemi(hodnota: Option<&str>) -> String {
+    match hodnota.map(str::trim) {
+        Some(z) if z.len() == 2 && z.bytes().all(|b| b.is_ascii_uppercase()) => z.to_string(),
+        _ => String::new(),
+    }
 }
 
 impl Filtry {
@@ -118,7 +130,9 @@ impl Filtry {
             _ => String::new(),
         };
 
-        Self { page, search, stav }
+        let zeme = normalizuj_zemi(params.get("zeme").map(String::as_str));
+
+        Self { page, search, stav, zeme }
     }
 
     /// `&search=…&stav=…`; `page` se do odkazů doplňuje zvlášť, protože se
@@ -132,6 +146,10 @@ impl Filtry {
 
         if !self.stav.is_empty() {
             qs.push_str(&format!("&stav={}", enkoduj(&self.stav)));
+        }
+
+        if !self.zeme.is_empty() {
+            qs.push_str(&format!("&zeme={}", enkoduj(&self.zeme)));
         }
 
         qs
@@ -150,12 +168,18 @@ impl Filtry {
     /// Jiné město, stav zůstává. Stránkování se resetuje — na páté stránce
     /// jiného města by uživatel často skončil v prázdnu.
     fn s_mestem(&self, mesto: &str) -> Self {
-        Self { page: 1, search: mesto.to_string(), stav: self.stav.clone() }
+        Self { page: 1, search: mesto.to_string(), ..self.clone() }
     }
 
     /// Jiný stav, město zůstává. Stránkování se resetuje ze stejného důvodu.
     fn se_stavem(&self, stav: &str) -> Self {
-        Self { page: 1, search: self.search.clone(), stav: stav.to_string() }
+        Self { page: 1, stav: stav.to_string(), ..self.clone() }
+    }
+
+    /// Jiná země. Město se resetuje — seznam měst se zemí filtruje, takže by
+    /// zvolené město v jiné zemi dávalo prázdný výpis.
+    fn se_zemi(&self, zeme: &str) -> Self {
+        Self { page: 1, search: String::new(), zeme: zeme.to_string(), ..self.clone() }
     }
 }
 
@@ -184,8 +208,12 @@ fn bezpecny_navrat(zpet: Option<&str>) -> String {
     if vypada_relativne { cil.to_string() } else { vychozi }
 }
 
-pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<String,String>>) -> impl IntoResponse{
+pub async fn html_page(State(state): State<AppState>, session: Session, params: Query<HashMap<String,String>>) -> impl IntoResponse{
     let filtry = Filtry::z_params(&params);
+
+    // Hromadný výběr žije v session napříč stránkami i filtry. Průběžně se čistí
+    // o id, která už v DB nejsou (smazání po jednom), aby „Vybráno N" nelhalo.
+    let vybrane = procisti_vyber(&state.pool, &session).await;
 
     let limit: i64 = 10;
     let offset: i64 = (filtry.page - 1) * limit;
@@ -197,9 +225,12 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
     -- Sloupce se vypisují ručně: query_as! je mapuje na pole struktury podle pořadí,
     -- takže `p.*` by při jiném fyzickém rozložení tabulky posunulo hodnoty a dekódování
     -- by spadlo panikou uvnitř bytes místo čitelné chyby.
+    -- `AS "x: _"` u timestampů: sqlx-store zapíná feature `sqlx/time` a makro by
+    -- jinak sáhlo po time::OffsetDateTime místo chrono podle pole struktury.
     SELECT
         p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,
-        p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.country_code, p.created_at, p.updated_at,
+        p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.country_code,
+        p.created_at AS "created_at: _", p.updated_at AS "updated_at: _",
         array_remove(array_agg(e.email), NULL) AS emaily,
         p.is_contacted, p.is_closed, p.poznamka
     FROM provozovny p
@@ -208,6 +239,7 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
       AND ($4 = ''
            OR ($4 = 'kontaktovane' AND p.is_contacted)
            OR ($4 = 'smluvene' AND p.is_closed))
+      AND ($5 = '' OR p.country_code = $5)
     GROUP BY p.id
     ORDER BY p.updated_at DESC
     LIMIT $1 OFFSET $2
@@ -215,7 +247,8 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
         limit,
         offset,
         search_pattern,
-        filtry.stav
+        filtry.stav,
+        filtry.zeme
     )
     .fetch_all(&state.pool)
     .await;
@@ -227,8 +260,10 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
 
     let data: Vec<Provozovna> = kontakty.unwrap_or_default();
 
+    // Města jen z vybrané země, ať pilulky nenabízejí kombinace s prázdným výsledkem.
     let mesta:Vec<String> = sqlx::query!(
-        "SELECT DISTINCT mesto FROM provozovny WHERE mesto IS NOT NULL ORDER BY mesto"
+        "SELECT DISTINCT mesto FROM provozovny WHERE mesto IS NOT NULL AND ($1 = '' OR country_code = $1) ORDER BY mesto",
+        filtry.zeme
     )
     .fetch_all(&state.pool)
     .await
@@ -236,6 +271,29 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
     .into_iter()
     .filter_map(|r| r.mesto)
     .collect();
+
+    // Země se berou z dat — starší záznamy bez country_code se objeví jen pod „Vše".
+    let zeme: Vec<String> = sqlx::query_scalar!(
+        "SELECT DISTINCT country_code FROM provozovny WHERE country_code IS NOT NULL ORDER BY country_code"
+    )
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default()
+    .into_iter()
+    .flatten()
+    .collect();
+
+    let mut zeme_pilulky = vec![Pilulka {
+        popisek: "Vše".to_string(),
+        url: filtry.se_zemi("").url(),
+        aktivni: filtry.zeme.is_empty(),
+    }];
+
+    zeme_pilulky.extend(zeme.iter().map(|z| Pilulka {
+        popisek: z.clone(),
+        url: filtry.se_zemi(z).url(),
+        aktivni: filtry.zeme == *z,
+    }));
 
     let mut mesta_pilulky = vec![Pilulka {
         popisek: "Vše".to_string(),
@@ -267,9 +325,11 @@ pub async fn html_page(State(state): State<AppState>, params: Query<HashMap<Stri
       AND ($2 = ''
            OR ($2 = 'kontaktovane' AND is_contacted)
            OR ($2 = 'smluvene' AND is_closed))
+      AND ($3 = '' OR country_code = $3)
     "#,
     search_pattern,
-    filtry.stav
+    filtry.stav,
+    filtry.zeme
     )
     .fetch_one(&state.pool)
     .await.unwrap_or(Some(0))
@@ -307,6 +367,9 @@ let nove_dnes: i64 = nove_dnes_raw.unwrap_or(Some(0)).unwrap_or(0);
         data => &data,
         search => &filtry.search,
         stav => &filtry.stav,
+        zeme => &filtry.zeme,
+        zeme_seznam => &zeme,
+        zeme_pilulky => &zeme_pilulky,
         // Připravený `&search=…&stav=…` pro odkazy stránkování.
         qs => &filtry.suffix(),
         // Cesta zpět pro serverové akce (skryté pole `zpet` ve formulářích).
@@ -316,7 +379,10 @@ let nove_dnes: i64 = nove_dnes_raw.unwrap_or(Some(0)).unwrap_or(0);
         stavy_pilulky => &stavy_pilulky,
         s_emailem => &s_emailem,
         prum_hodnoceni => &prumer,
-        nove_dnes => &nove_dnes
+        nove_dnes => &nove_dnes,
+        // Hromadný výběr ze session — pole id kvůli `p.id in vybrane` v šabloně.
+        vybrane => &vybrane,
+        vybrano => &vybrane.len()
     };
 
     match state.tera.render("index.html", &context) {
@@ -339,7 +405,10 @@ async fn get_data_from_popup(
     limit: i64,
     mesto: Option<String>,
     stav: &str,
+    zeme: &str,
     razeni: &str,
+    // `Some(ids)` = omezit na tyto provozovny (hromadný výběr), `None` = bez omezení.
+    ids: Option<Vec<i32>>,
 ) -> Result<Vec<ProvozovnaExport>, sqlx::Error> {
     // `razeni` se do SQL vkládá formátováním, proto smí přijít jen z whitelistu
     // ve `download_file`. Ostatní parametry jdou jako bindy.
@@ -357,6 +426,8 @@ async fn get_data_from_popup(
           AND ($2 = ''
                OR ($2 = 'kontaktovane' AND p.is_contacted)
                OR ($2 = 'smluvene' AND p.is_closed))
+          AND ($4::int4[] IS NULL OR p.id = ANY($4))
+          AND ($5 = '' OR p.country_code = $5)
         GROUP BY p.id
         ORDER BY {}
         LIMIT $3
@@ -368,6 +439,8 @@ async fn get_data_from_popup(
         .bind(mesto)
         .bind(stav)
         .bind(limit.clamp(1, 10_000))
+        .bind(ids)
+        .bind(zeme)
         .fetch_all(pool)
         .await
 }
@@ -955,6 +1028,131 @@ pub async fn login_page(State(state): State<AppState>, params: Query<HashMap<Str
     Html(state.tera.render("login.html", &context).unwrap())
 }
 
+// ───────────── Hromadný výběr (session) ─────────────
+
+/// Klíč v session, pod kterým leží id provozoven vybraných napříč stránkami.
+const VYBER_KEY: &str = "vyber";
+
+async fn nacti_vyber(session: &Session) -> BTreeSet<i32> {
+    match session.get::<BTreeSet<i32>>(VYBER_KEY).await {
+        Ok(v) => v.unwrap_or_default(),
+        Err(e) => {
+            eprintln!("Session (čtení výběru): {e:?}");
+            BTreeSet::new()
+        }
+    }
+}
+
+async fn uloz_vyber(session: &Session, vyber: &BTreeSet<i32>) {
+    // Prázdný výběr se maže úplně, ať se v PG nedrží session jen kvůli `[]`.
+    let vysledek = if vyber.is_empty() {
+        session.remove::<BTreeSet<i32>>(VYBER_KEY).await.map(|_| ())
+    } else {
+        session.insert(VYBER_KEY, vyber).await
+    };
+    if let Err(e) = vysledek {
+        eprintln!("Session (zápis výběru): {e:?}");
+    }
+}
+
+/// Vrátí výběr zbavený id, která už v DB neexistují; když se něco odstranilo,
+/// rovnou to zapíše zpět do session.
+async fn procisti_vyber(pool: &PgPool, session: &Session) -> Vec<i32> {
+    let vyber = nacti_vyber(session).await;
+    if vyber.is_empty() {
+        return Vec::new();
+    }
+
+    let ids: Vec<i32> = vyber.iter().copied().collect();
+    let existujici: BTreeSet<i32> = match sqlx::query_scalar!("SELECT id FROM provozovny WHERE id = ANY($1)", &ids)
+        .fetch_all(pool)
+        .await
+    {
+        Ok(v) => v.into_iter().collect(),
+        // Při chybě DB výběr raději nechat, než ho uživateli tiše smazat.
+        Err(e) => {
+            eprintln!("DB chyba (kontrola výběru): {e:?}");
+            return ids;
+        }
+    };
+
+    if existujici.len() != vyber.len() {
+        uloz_vyber(session, &existujici).await;
+    }
+    existujici.into_iter().collect()
+}
+
+/// POST /vyber — upraví hromadný výběr v session.
+/// Formulář: `akce` = pridat | odebrat | zrusit, `id` (může se opakovat), `zpet`.
+/// Checkboxy volají přes fetch s `Accept: application/json` a dostanou `{"pocet": N}`,
+/// aby se stránka nepřekreslovala; bez toho se odpovídá redirectem na `zpet`.
+pub async fn vyber_zmena(
+    session: Session,
+    hlavicky: axum::http::HeaderMap,
+    Form(pole): Form<Vec<(String, String)>>,
+) -> impl IntoResponse {
+    let mut akce = String::new();
+    let mut ids: Vec<i32> = Vec::new();
+    let mut zpet: Option<String> = None;
+
+    for (klic, hodnota) in pole {
+        match klic.as_str() {
+            "akce" => akce = hodnota,
+            "id" => if let Ok(id) = hodnota.trim().parse::<i32>() { ids.push(id) },
+            "zpet" => zpet = Some(hodnota),
+            _ => {}
+        }
+    }
+
+    let mut vyber = nacti_vyber(&session).await;
+    match akce.as_str() {
+        "pridat" => vyber.extend(ids),
+        "odebrat" => vyber.retain(|id| !ids.contains(id)),
+        "zrusit" => vyber.clear(),
+        _ => return (StatusCode::BAD_REQUEST, "neznámá akce").into_response(),
+    }
+    uloz_vyber(&session, &vyber).await;
+
+    let chce_json = hlavicky
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.contains("application/json"));
+
+    if chce_json {
+        Json(json!({ "pocet": vyber.len() })).into_response()
+    } else {
+        Redirect::to(&bezpecny_navrat(zpet.as_deref())).into_response()
+    }
+}
+
+/// POST /hromadne/smazat — smaže všechny provozovny z výběru a výběr vyprázdní.
+pub async fn hromadne_smazat(
+    State(state): State<AppState>,
+    session: Session,
+    Form(params): Form<HashMap<String, String>>,
+) -> impl IntoResponse {
+    let zpet = bezpecny_navrat(params.get("zpet").map(String::as_str));
+
+    let ids: Vec<i32> = nacti_vyber(&session).await.into_iter().collect();
+    if ids.is_empty() {
+        return Redirect::to(&zpet).into_response();
+    }
+
+    // E-maily odejdou přes ON DELETE CASCADE.
+    match sqlx::query!("DELETE FROM provozovny WHERE id = ANY($1)", &ids)
+        .execute(&state.pool)
+        .await
+    {
+        Ok(r) => {
+            info!("Hromadně smazáno {} provozoven", r.rows_affected());
+            uloz_vyber(&session, &BTreeSet::new()).await;
+        }
+        Err(e) => eprintln!("DB chyba (hromadné mazání, {} id): {e:?}", ids.len()),
+    }
+
+    Redirect::to(&zpet).into_response()
+}
+
 pub async fn delete_record(State(state): State<AppState>, Form(params): Form<HashMap<String, String>>) -> impl IntoResponse {
     // Formulář posílá `zpet` = výpis se stránkou i filtry, aby mazání
     // neodhodilo uživatele na první stránku bez filtru.
@@ -977,7 +1175,7 @@ pub async fn delete_record(State(state): State<AppState>, Form(params): Form<Has
     }
 }
 
-pub async fn download_file(State(state): State<AppState>, Form(pole): Form<Vec<(String, String)>>) -> impl IntoResponse {
+pub async fn download_file(State(state): State<AppState>, session: Session, Form(pole): Form<Vec<(String, String)>>) -> impl IntoResponse {
     println!("Start serverové akce POST /download");
 
     let mut format: Option<String> = None;
@@ -985,6 +1183,8 @@ pub async fn download_file(State(state): State<AppState>, Form(pole): Form<Vec<(
     let mut limit: Option<i64> = None;
     let mut mesto: Option<String> = None;
     let mut stav = String::new();
+    let mut zeme = String::new();
+    let mut jen_vybrane = false;
 
     for (klic, hodnota) in pole {
         let h = hodnota.trim();
@@ -1004,16 +1204,32 @@ pub async fn download_file(State(state): State<AppState>, Form(pole): Form<Vec<(
                 "kontaktovane" | "smluvene" => h.to_string(),
                 _ => String::new(),
             },
+            "zeme" => zeme = normalizuj_zemi(Some(h)),
+            "jen_vybrane" => jen_vybrane = matches!(h, "1" | "true" | "on"),
             _ => {}
         }
     }
 
     let format = format.unwrap_or_else(|| "json".to_string());
     let razeni = razeni.unwrap_or("p.nazev ASC");
-    let limit  = limit.unwrap_or(100).clamp(1, 10_000);
-    let mesto  = mesto.filter(|s| !s.is_empty());
+    let mut limit = limit.unwrap_or(100).clamp(1, 10_000);
+    let mut mesto = mesto.filter(|s| !s.is_empty());
 
-    let data = match get_data_from_popup(&state.pool, limit, mesto, &stav, razeni).await {
+    // Export hromadného výběru: bere přesně to, co si uživatel naklikal, takže
+    // město/stav/limit z popupu se ignorují — jen řazení zůstává.
+    let mut ids: Option<Vec<i32>> = None;
+    if jen_vybrane {
+        let vyber = nacti_vyber(&session).await;
+        if !vyber.is_empty() {
+            limit = 10_000;
+            mesto = None;
+            stav.clear();
+            zeme.clear();
+            ids = Some(vyber.into_iter().collect());
+        }
+    }
+
+    let data = match get_data_from_popup(&state.pool, limit, mesto, &stav, &zeme, razeni, ids).await {
         Ok(d) => d,
         Err(e) => {
             eprintln!("DB chyba: {e}");
@@ -1158,7 +1374,8 @@ pub async fn provozovna_detail(
         r#"
         SELECT
             p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,
-            p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.country_code, p.created_at, p.updated_at,
+            p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.country_code,
+        p.created_at AS "created_at: _", p.updated_at AS "updated_at: _",
             array_remove(array_agg(e.email), NULL) AS emaily,
             p.is_contacted, p.is_closed, p.poznamka
         FROM provozovny p

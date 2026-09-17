@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT\n            p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,\n            p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.country_code, p.created_at, p.updated_at,\n            array_remove(array_agg(e.email), NULL) AS emaily,\n            p.is_contacted, p.is_closed, p.poznamka\n        FROM provozovny p\n        LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id\n        WHERE p.id = $1\n        GROUP BY p.id\n        ",
+  "query": "\n        SELECT\n            p.id, p.place_id, p.nazev, p.telefon, p.telefon_raw, p.web, p.adresa, p.mesto,\n            p.psc, p.hodnoceni, p.pocet_recenzi, p.url, p.country_code,\n        p.created_at AS \"created_at: _\", p.updated_at AS \"updated_at: _\",\n            array_remove(array_agg(e.email), NULL) AS emaily,\n            p.is_contacted, p.is_closed, p.poznamka\n        FROM provozovny p\n        LEFT JOIN provozovny_emaily e ON e.provozovna_id = p.id\n        WHERE p.id = $1\n        GROUP BY p.id\n        ",
   "describe": {
     "columns": [
       {
@@ -70,12 +70,12 @@
       },
       {
         "ordinal": 13,
-        "name": "created_at",
+        "name": "created_at: _",
         "type_info": "Timestamptz"
       },
       {
         "ordinal": 14,
-        "name": "updated_at",
+        "name": "updated_at: _",
         "type_info": "Timestamptz"
       },
       {
@@ -126,5 +126,5 @@
       false
     ]
   },
-  "hash": "03c6d054ed30e4843ccd75be1edae744585e41712a796c9ee5df0307dbfd00e5"
+  "hash": "e512244fad11693ae05c2a6b01ccc22ed34f4eef0a25dcc1c264fea0991c7f1a"
 }
