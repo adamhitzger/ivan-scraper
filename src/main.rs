@@ -107,7 +107,7 @@ async fn main() -> Result<()> {
     .route("/nastaveni", post(nastaveni_save))
     .route_layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
-    let app: axum::Router = axum::Router::new()
+    let app: Router = Router::new()
         .merge(protected)
         .route("/health", get(health))
         .route("/apify/webhook", post(apify_webhook))
